@@ -1,0 +1,63 @@
+# NORTHSTREAM - "Stream Context Agent" addon
+#
+# Run together with the existing NORTHSTREAM compose file, in the SAME
+# compose project, so services can resolve each other by name
+# (kafka, ollama, postgres, etc. already defined there):
+#
+#   docker compose \
+#     -f docker-compose-northstream-ai.yml \
+#     -f docker-compose.addon.yml \
+#     up -d --build
+#
+# This adds:
+#   - qdrant         : vector store for semantic search over live stream events
+#   - stream-agent    : FastAPI service that grounds a small Ollama model in
+#                        real-time Kafka/CDC data (the actual demo lives here)
+#   - data-generator  : continuously feeds Postgres with realistic events so
+#                        there is always fresh, "quality" stream data
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: northstream-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  stream-agent:
+    build: ./stream-agent
+    container_name: northstream-stream-agent
+    restart: unless-stopped
+    ports:
+      - "8500:8500"
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      OLLAMA_BASE_URL: http://ollama:11434
+      QDRANT_URL: http://qdrant:6333
+      OLLAMA_CHAT_MODEL: llama3.2:3b
+      OLLAMA_EMBED_MODEL: nomic-embed-text
+      KAFKA_TOPIC_PATTERN: "^northstream\\..*"
+    depends_on:
+      - kafka
+      - ollama
+      - qdrant
+
+  data-generator:
+    build: ./data-generator
+    container_name: northstream-data-generator
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: sales
+      DB_USER: demo
+      DB_PASSWORD: demo
+      INTERVAL_SECONDS: "3"
+    depends_on:
+      - postgres
+
+volumes:
+  qdrant_data:

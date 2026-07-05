@@ -1,0 +1,17 @@
+{
+  "name": "northstream-postgres-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "demo",
+    "database.password": "demo",
+    "database.dbname": "sales",
+    "topic.prefix": "northstream",
+    "plugin.name": "pgoutput",
+    "table.include.list": "public.orders,public.sensor_readings",
+    "publication.autocreate.mode": "filtered",
+    "slot.name": "northstream_slot",
+    "tombstones.on.delete": "false"
+  }
+}

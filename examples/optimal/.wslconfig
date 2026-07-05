@@ -1,0 +1,15 @@
+# NORTHSTREAM - Optimal tier
+# Copy this file to %UserProfile%\.wslconfig, then run:
+#   wsl --shutdown
+# and restart Docker Desktop.
+#
+# GPU passthrough for Ollama (RTX/GPU accelerated Granite inference) is
+# separate from this file: it requires an up-to-date NVIDIA driver on
+# Windows (WSL2 GPU paravirtualization is enabled automatically by the
+# driver) and starting the stack with the .\start-addon.ps1 -Gpu flag
+# (see docker-compose.gpu.yml).
+[wsl2]
+memory=24GB
+processors=8
+swap=8GB
+localhostForwarding=true

@@ -1,0 +1,9 @@
+# NORTHSTREAM - Recommended tier
+# Copy this file to %UserProfile%\.wslconfig, then run:
+#   wsl --shutdown
+# and restart Docker Desktop.
+[wsl2]
+memory=20GB
+processors=8
+swap=8GB
+localhostForwarding=true

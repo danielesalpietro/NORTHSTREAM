@@ -37,8 +37,8 @@ services:
       KAFKA_BOOTSTRAP: kafka:9092
       OLLAMA_BASE_URL: http://ollama:11434
       QDRANT_URL: http://qdrant:6333
-      OLLAMA_CHAT_MODEL: granite4:1b
-      OLLAMA_EMBED_MODEL: granite-embedding:30m
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-granite4:1b}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-granite-embedding:30m}
       KAFKA_TOPIC_PATTERN: "^northstream\\..*"
     depends_on:
       - kafka

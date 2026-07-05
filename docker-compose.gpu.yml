@@ -1,0 +1,26 @@
+# NORTHSTREAM - GPU passthrough override
+#
+# Adds an NVIDIA GPU reservation to the Ollama service so Granite inference
+# runs on the GPU instead of the CPU. Requires:
+#   - an NVIDIA GPU with enough VRAM for the chosen model (see examples/)
+#   - a current NVIDIA driver on the host (WSL2 GPU support is enabled
+#     automatically by the driver, no extra Docker Desktop setting needed)
+#
+# Usage:
+#   docker compose \
+#     -f docker-compose-northstream-ai.yml \
+#     -f docker-compose.addon.yml \
+#     -f docker-compose.gpu.yml \
+#     up -d --build
+#
+# or simply: .\start-addon.ps1 -Gpu   /   ./start-addon.sh --gpu
+
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

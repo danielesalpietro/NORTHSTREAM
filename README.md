@@ -162,6 +162,52 @@ below 16 GB RAM, Elasticsearch and OpenMetadata alone will struggle to start.
 A GPU is never required, but it makes chat responses noticeably faster and
 lets you comfortably run the larger Granite variants.
 
+### Per-tier examples
+
+[`examples/`](examples/) has one folder per tier (`minimal/`, `recommended/`,
+`optimal/`), each with two ready-to-copy files:
+
+- **`.wslconfig`** — Windows/WSL2 memory and CPU limits for that tier
+- **`.env`** — selects `OLLAMA_CHAT_MODEL` / `OLLAMA_EMBED_MODEL` for that
+  tier; copied to the repository root, it is picked up automatically by
+  `docker compose`
+
+```powershell
+# Windows: apply WSL2 limits (adjust the tier folder name as needed)
+copy examples\recommended\.wslconfig $env:UserProfile\.wslconfig
+wsl --shutdown
+# restart Docker Desktop afterwards
+
+# Select the models for that tier
+copy examples\recommended\.env .env
+```
+
+```bash
+# Linux/macOS: select the models for that tier
+cp examples/recommended/.env .env
+```
+
+Without a `.env` file, the stack defaults to the Recommended tier
+(`granite4:1b` / `granite-embedding:30m`).
+
+### GPU passthrough (optional)
+
+If you have an NVIDIA GPU with enough VRAM (see the table above), start the
+addon with GPU passthrough enabled instead of the CPU-only default:
+
+```powershell
+.\start-addon.ps1 -Gpu
+```
+
+```bash
+./start-addon.sh --gpu
+```
+
+This adds [`docker-compose.gpu.yml`](docker-compose.gpu.yml), which reserves
+the GPU for the `ollama` service. It requires a current NVIDIA driver on the
+host — WSL2 GPU support is enabled automatically by the driver, no extra
+Docker Desktop setting is needed.
+
 ---
 
 ## Quick Start

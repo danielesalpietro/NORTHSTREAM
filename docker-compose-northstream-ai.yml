@@ -222,6 +222,27 @@ services:
       timeout: 10s
       retries: 20
  
+  execute-migrate-all:
+    image: openmetadata/server:1.7.0
+    container_name: northstream-openmetadata-migrate
+    command: ["./bootstrap/openmetadata-ops.sh", "migrate"]
+    environment:
+      DB_DRIVER_CLASS: org.postgresql.Driver
+      DB_SCHEME: postgresql
+      DB_HOST: openmetadata-db
+      DB_PORT: 5432
+      OM_DATABASE: openmetadata_db
+      DB_USER: openmetadata
+      DB_USER_PASSWORD: openmetadata
+      ELASTICSEARCH_HOST: elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      ELASTICSEARCH_SCHEME: http
+    depends_on:
+      openmetadata-db:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+
   openmetadata:
     image: openmetadata/server:1.7.0
     container_name: northstream-openmetadata
@@ -254,6 +275,8 @@ services:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
+      execute-migrate-all:
+        condition: service_completed_successfully
  
  
   # ------------------------------------------------------------

@@ -49,9 +49,11 @@ curl http://localhost:8083/connectors/northstream-postgres-connector/status
 
 ## 3. Pull the Ollama models (small, on purpose)
 
+IBM Granite, open-source and aligned with the watsonx narrative:
+
 ```bash
-docker exec -it northstream-ollama ollama pull llama3.2:3b
-docker exec -it northstream-ollama ollama pull nomic-embed-text
+docker exec -it northstream-ollama ollama pull granite4:1b
+docker exec -it northstream-ollama ollama pull granite-embedding:30m
 ```
 
 ## 4. Let the data generator run for a couple of minutes
@@ -96,7 +98,7 @@ More example questions useful for the demo:
 
 ## 6. The takeaway (for presales/workshop)
 
-The quality of a small LLM's answer (3B parameters) does not depend on its
+The quality of a small LLM's answer (1B parameters) does not depend on its
 size, but on the quality and freshness of the data it is fed at the moment
 of the question. This is the same principle behind watsonx.data: the value
 proposition is not "a bigger model", it's "an integrated, governed, real-time

@@ -223,11 +223,11 @@ curl -X POST -H "Content-Type: application/json" \
   http://localhost:8083/connectors
 ```
 
-Pull the small models used by the agent:
+Pull the small models used by the agent (IBM Granite, open-source):
 
 ```bash
-docker exec -it northstream-ollama ollama pull llama3.2:3b
-docker exec -it northstream-ollama ollama pull nomic-embed-text
+docker exec -it northstream-ollama ollama pull granite4:1b
+docker exec -it northstream-ollama ollama pull granite-embedding:30m
 ```
 
 Run the actual demo — same question, with and without live stream context:

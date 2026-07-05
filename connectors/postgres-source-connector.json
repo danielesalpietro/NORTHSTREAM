@@ -12,6 +12,7 @@
     "table.include.list": "public.orders,public.sensor_readings",
     "publication.autocreate.mode": "filtered",
     "slot.name": "northstream_slot",
-    "tombstones.on.delete": "false"
+    "tombstones.on.delete": "false",
+    "decimal.handling.mode": "double"
   }
 }

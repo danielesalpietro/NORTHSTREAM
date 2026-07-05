@@ -152,17 +152,38 @@ class ChatRequest(BaseModel):
     top_k: int = 5
 
 
+# Known site names emitted by data-generator/generate_events.py. The small
+# embedding model (granite-embedding:30m) doesn't reliably rank a site-specific
+# event above unrelated "orders" events on semantic similarity alone, so when a
+# question names one of these sites we boost literal matches from the buffer.
+KNOWN_SITES = ["Plant-A", "Plant-B", "Warehouse-1", "Warehouse-2", "Line-3"]
+
+
+def keyword_matches(question: str, top_k: int):
+    q_lower = question.lower()
+    for site in KNOWN_SITES:
+        if site.lower() in q_lower:
+            matches = [e["text"] for e in recent_events if site.lower() in e["text"].lower()]
+            return matches[-top_k:]
+    return []
+
+
 def search_context(question: str, top_k: int):
+    keyword_hits = keyword_matches(question, top_k)
+
+    semantic_hits = []
     try:
         vector = embed_text(question)
         ensure_collection(len(vector))
         hits = qdrant.search(collection_name=COLLECTION, query_vector=vector, limit=top_k)
-        if hits:
-            return [h.payload["text"] for h in hits]
+        semantic_hits = [h.payload["text"] for h in hits]
     except Exception as e:
         print("semantic search failed, falling back to recent buffer:", e)
-    # fallback: just use the most recent raw events
-    return [e["text"] for e in list(recent_events)[-top_k:]]
+        if not keyword_hits:
+            semantic_hits = [e["text"] for e in list(recent_events)[-top_k:]]
+
+    combined = keyword_hits + [h for h in semantic_hits if h not in keyword_hits]
+    return combined[:top_k]
 
 
 def call_ollama(prompt: str) -> str:

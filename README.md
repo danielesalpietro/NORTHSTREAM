@@ -263,19 +263,24 @@ It adds three services on top of the base stack:
 
 Start it alongside the base stack:
 
-```bash
-docker compose \
-  -f docker-compose-northstream-ai.yml \
-  -f docker-compose.addon.yml \
-  up -d --build
+```powershell
+.\start-addon.ps1
 ```
+
+```bash
+./start-addon.sh
+```
+
+(equivalent to `docker compose -f docker-compose-northstream-ai.yml -f docker-compose.addon.yml up -d --build`; add `-Gpu` / `--gpu` for GPU passthrough)
 
 Register the Debezium CDC connector:
 
+```powershell
+.\register-connector.ps1
+```
+
 ```bash
-curl -X POST -H "Content-Type: application/json" \
-  --data @connectors/postgres-source-connector.json \
-  http://localhost:8083/connectors
+./register-connector.sh
 ```
 
 Pull the small models used by the agent (IBM Granite, open-source):
@@ -285,13 +290,69 @@ docker exec -it northstream-ollama ollama pull granite4:1b
 docker exec -it northstream-ollama ollama pull granite-embedding:30m
 ```
 
+### Demo via command line (batch)
+
 Run the actual demo — same question, with and without live stream context:
+
+```powershell
+.\demo-compare.ps1
+```
+
+```bash
+./demo-compare.sh
+```
+
+Both scripts accept an optional custom question as the first argument, and
+are equivalent to:
 
 ```bash
 curl -X POST http://localhost:8500/compare \
   -H "Content-Type: application/json" \
   -d '{"question": "Are there any recent sensor anomalies at Plant-B?"}'
 ```
+
+Typical response:
+
+- `without_stream_context` → the model answers generically or makes things
+  up, because it has no real information about "Plant-B" today.
+- `with_stream_context` → the model cites the actual values that just arrived
+  from the stream (temperature, vibration, whether it's an anomaly), because
+  you passed them in as context retrieved from Qdrant.
+
+### Demo via Web GUI (Open WebUI)
+
+The same comparison can be run entirely from [Open WebUI](http://localhost:3000)
+instead of the command line, which is more convenient for live demos and
+workshops.
+
+`stream-agent` exposes an OpenAI-compatible surface (`/v1/models`,
+`/v1/chat/completions`) purely so Open WebUI can treat it as just another
+chat model, grounded in live stream context, side by side with the raw
+Ollama model it already talks to natively.
+
+1. Open [http://localhost:3000](http://localhost:3000) and sign in (or create
+   the local admin account on first launch).
+2. Go to **Admin Panel → Settings → Connections**, add an **OpenAI API**
+   connection with:
+   - **API Base URL**: `http://stream-agent:8500/v1`
+   - **API Key**: any non-empty placeholder (e.g. `northstream`) — the
+     endpoint doesn't validate it, Open WebUI just requires the field filled
+   - Save. A model named `northstream-grounded` now shows up in the model
+     picker, next to the native Granite models.
+3. For a clean baseline, open **Workspace → Models**, edit the plain
+   `granite4:1b` model, and uncheck everything under **Builtin Tools**
+   (Calendario, Memoria, Knowledge Base, etc.). Otherwise the model may try
+   to answer by calling an unrelated built-in tool (e.g. searching the
+   calendar for "Plant-B") instead of answering — or not answering — from its
+   own knowledge.
+4. Start a **new chat** with `granite4:1b` and ask the demo question — this
+   is the ungrounded baseline.
+5. Start another **new chat** with `northstream-grounded` and ask the exact
+   same question — this one answers using real events retrieved from Qdrant.
+
+Always use a fresh chat for each side of the comparison: reusing a thread
+lets the model quote its own earlier (possibly wrong) answer from history
+instead of actually reasoning about the question again.
 
 Full step-by-step walkthrough: [`docs/demo-script.md`](docs/demo-script.md).
 

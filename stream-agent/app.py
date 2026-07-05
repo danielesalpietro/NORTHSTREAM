@@ -247,3 +247,47 @@ def compare(req: ChatRequest):
         "with_stream_context": grounded_answer,
         "context_used": context,
     }
+
+
+# OpenAI-compatible surface so Open WebUI can talk to the grounded agent as
+# just another chat model, side by side with the raw Ollama model it already
+# has via its native Ollama connection.
+GROUNDED_MODEL_ID = "northstream-grounded"
+
+
+@app.get("/v1/models")
+def list_models():
+    return {
+        "object": "list",
+        "data": [
+            {"id": GROUNDED_MODEL_ID, "object": "model", "owned_by": "northstream"}
+        ],
+    }
+
+
+class OpenAIChatRequest(BaseModel):
+    model: str = GROUNDED_MODEL_ID
+    messages: list
+    stream: bool = False
+
+
+@app.post("/v1/chat/completions")
+def chat_completions(req: OpenAIChatRequest):
+    question = req.messages[-1]["content"] if req.messages else ""
+    context = search_context(question, 5)
+    answer = call_ollama(build_grounded_prompt(question, context))
+
+    return {
+        "id": "chatcmpl-northstream",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": GROUNDED_MODEL_ID,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": answer},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }

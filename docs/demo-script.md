@@ -23,29 +23,35 @@ northstream/
 
 ## 1. Start everything
 
-```bash
-docker compose \
-  -f docker-compose-northstream-ai.yml \
-  -f docker-compose.addon.yml \
-  up -d --build
+```powershell
+.\start-addon.ps1
 ```
+
+```bash
+./start-addon.sh
+```
+
+(add `-Gpu` / `--gpu` for GPU passthrough; equivalent to
+`docker compose -f docker-compose-northstream-ai.yml -f docker-compose.addon.yml up -d --build`)
 
 Wait until Kafka, Postgres, Debezium Connect, Ollama and Qdrant are
 `healthy` (`docker compose ps`).
 
 ## 2. Register the Debezium CDC connector
 
-```bash
-curl -X POST -H "Content-Type: application/json" \
-  --data @connectors/postgres-source-connector.json \
-  http://localhost:8083/connectors
+```powershell
+.\register-connector.ps1
 ```
 
-Check its status:
-
 ```bash
-curl http://localhost:8083/connectors/northstream-postgres-connector/status
+./register-connector.sh
 ```
+
+This also prints the connector status. The connector config
+([`connectors/postgres-source-connector.json`](../connectors/postgres-source-connector.json))
+sets `decimal.handling.mode: double` so `NUMERIC` columns
+(`temperature_c`, `vibration_g`, `unit_price`, `total_amount`) stream as
+plain numbers instead of base64-encoded bytes.
 
 ## 3. Pull the Ollama models (small, on purpose)
 
@@ -70,9 +76,19 @@ curl http://localhost:8500/health
 curl http://localhost:8500/events?limit=10
 ```
 
-## 5. The actual demo: /compare
+## 5. The actual demo: /compare (command line)
 
 Ask the same question to the model with and without stream context:
+
+```powershell
+.\demo-compare.ps1
+```
+
+```bash
+./demo-compare.sh
+```
+
+or directly:
 
 ```bash
 curl -X POST http://localhost:8500/compare \
@@ -95,6 +111,27 @@ More example questions useful for the demo:
 "Which products are selling best in the EMEA region right now?"
 "Are there any temperature readings above 85 degrees in the last few minutes?"
 ```
+
+## 5b. The same demo, from Open WebUI
+
+`stream-agent` also exposes an OpenAI-compatible API (`/v1/models`,
+`/v1/chat/completions`), so the same before/after comparison can be run as an
+actual chat instead of curl calls — better for live presentations.
+
+1. Open [http://localhost:3000](http://localhost:3000) (create the local
+   admin account on first launch).
+2. **Admin Panel → Settings → Connections → OpenAI API** → add a connection
+   with Base URL `http://stream-agent:8500/v1` and any non-empty API key.
+   A `northstream-grounded` model appears in the model picker.
+3. **Workspace → Models → granite4:1b → edit**: uncheck everything under
+   **Builtin Tools**. Without this, the model may try to answer by invoking
+   an unrelated built-in tool (e.g. searching its calendar for "Plant-B")
+   instead of answering from its own knowledge, which defeats the baseline
+   comparison.
+4. Ask the demo question in a **new chat** with `granite4:1b` (baseline), then
+   in another **new chat** with `northstream-grounded` (grounded). Always use
+   a fresh chat per side — reusing a thread lets the model repeat its own
+   earlier answer from history instead of reasoning again.
 
 ## 6. The takeaway (for presales/workshop)
 

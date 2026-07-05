@@ -146,12 +146,21 @@ A typical demo scenario is:
 
 - Docker Engine or Docker Desktop
 - Docker Compose v2
-- At least 16 GB RAM for a reduced lab
-- 32 GB RAM recommended
-- 8 vCPU recommended
-- 50+ GB free disk space recommended
 
-For larger local LLMs, a GPU-enabled environment is recommended, but not required for smaller models.
+Pick the tier that matches your machine. All three run the full base stack
+plus the Stream Context Agent addon — the difference is model size and
+response speed.
+
+| Tier | RAM | vCPU | Disk | GPU | Suggested Granite models |
+|---|---|---|---|---|---|
+| **Minimal** | 16 GB | 4 | 30 GB free | not required | `granite4:350m` + `granite-embedding:30m` |
+| **Recommended** | 32 GB | 8 | 50 GB free | not required | `granite4:1b` + `granite-embedding:30m` |
+| **Optimal** | 32 GB+ | 8+ | 80 GB+ free | 8+ GB VRAM (e.g. RTX 4060/5080) | `granite4:3b` or `granite4:7b-a1b-h` + `granite-embedding:278m` |
+
+Minimal is enough to see every layer of the pipeline working end to end;
+below 16 GB RAM, Elasticsearch and OpenMetadata alone will struggle to start.
+A GPU is never required, but it makes chat responses noticeably faster and
+lets you comfortably run the larger Granite variants.
 
 ---
 
@@ -268,11 +277,13 @@ watsonx-inspired lab like NORTHSTREAM. Sizes below are as published on
 
 | Tag | Parameters | Download size | Notes |
 |---|---|---|---|
-| `granite4:350m` | 350M | 708 MB | tiny, quick smoke tests |
-| `granite4:1b` | 1B | 3.3 GB | good quality/size tradeoff |
-| `granite4:3b` (`micro`) | 3B | 2.1 GB | direct alternative to `llama3.2:3b` |
-| `granite4:7b-a1b-h` (`tiny-h`, MoE) | 7B total / ~1B active | 4.2 GB | MoE, fast inference |
-| `granite4:32b-a9b-h` (`small-h`, MoE) | 32B total / ~9B active | 19 GB | most capable in the line |
+| Tag | Parameters | Download size | Tier |
+|---|---|---|---|
+| `granite4:350m` | 350M | 708 MB | Minimal |
+| `granite4:1b` | 1B | 3.3 GB | Recommended |
+| `granite4:3b` (`micro`) | 3B | 2.1 GB | Optimal (CPU-friendly) |
+| `granite4:7b-a1b-h` (`tiny-h`, MoE) | 7B total / ~1B active | 4.2 GB | Optimal (GPU) |
+| `granite4:32b-a9b-h` (`small-h`, MoE) | 32B total / ~9B active | 19 GB | beyond Optimal, needs 16 GB+ VRAM |
 
 ```bash
 docker exec -it northstream-ollama ollama pull granite4:1b
@@ -281,10 +292,10 @@ docker exec -it northstream-ollama ollama pull granite4:1b
 IBM also publishes [`granite-embedding`](https://ollama.com/library/granite-embedding),
 a native alternative to `nomic-embed-text` for the Stream Context Agent addon:
 
-| Tag | Download size | Language |
-|---|---|---|
-| `granite-embedding:30m` | 63 MB | English only |
-| `granite-embedding:278m` | 563 MB | multilingual |
+| Tag | Download size | Language | Tier |
+|---|---|---|---|
+| `granite-embedding:30m` | 63 MB | English only | Minimal / Recommended |
+| `granite-embedding:278m` | 563 MB | multilingual | Optimal |
 
 ```bash
 docker exec -it northstream-ollama ollama pull granite-embedding:30m

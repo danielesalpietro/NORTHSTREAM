@@ -259,6 +259,40 @@ docker exec -it northstream-ollama ollama pull mistral:7b
 docker exec -it northstream-ollama ollama pull llama3.1:8b
 ```
 
+### IBM Granite (open-source, watsonx-aligned)
+
+IBM's [Granite](https://www.ibm.com/granite) models are the open-source (Apache 2.0)
+foundation models behind watsonx.ai, and are a natural fit for a
+watsonx-inspired lab like NORTHSTREAM. Sizes below are as published on
+[Ollama](https://ollama.com/library/granite4):
+
+| Tag | Parameters | Download size | Notes |
+|---|---|---|---|
+| `granite4:350m` | 350M | 708 MB | tiny, quick smoke tests |
+| `granite4:1b` | 1B | 3.3 GB | good quality/size tradeoff |
+| `granite4:3b` (`micro`) | 3B | 2.1 GB | direct alternative to `llama3.2:3b` |
+| `granite4:7b-a1b-h` (`tiny-h`, MoE) | 7B total / ~1B active | 4.2 GB | MoE, fast inference |
+| `granite4:32b-a9b-h` (`small-h`, MoE) | 32B total / ~9B active | 19 GB | most capable in the line |
+
+```bash
+docker exec -it northstream-ollama ollama pull granite4:1b
+```
+
+IBM also publishes [`granite-embedding`](https://ollama.com/library/granite-embedding),
+a native alternative to `nomic-embed-text` for the Stream Context Agent addon:
+
+| Tag | Download size | Language |
+|---|---|---|
+| `granite-embedding:30m` | 63 MB | English only |
+| `granite-embedding:278m` | 563 MB | multilingual |
+
+```bash
+docker exec -it northstream-ollama ollama pull granite-embedding:30m
+```
+
+To use Granite in the Stream Context Agent, set `OLLAMA_CHAT_MODEL` and
+`OLLAMA_EMBED_MODEL` accordingly in `docker-compose.addon.yml`.
+
 Open the chat interface:
 
 [NORTHSTREAM Chat](http://localhost:3000)

@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NORTHSTREAM — Open-Source Real-Time, Governed, AI-Ready Data Platform Simulator</title>
+<meta name="description" content="NORTHSTREAM is a free, open-source Docker Compose lab that simulates a real-time, governed, AI-ready data platform: CDC, streaming, lakehouse, governance and local AI chat with data — architecturally inspired by IBM watsonx.data, built entirely on open-source components.">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="NORTHSTREAM — Open-Source Real-Time Data Platform Simulator">
+<meta property="og:description" content="A local, open-source lab simulating CDC, streaming, lakehouse and AI-ready data — architecturally inspired by watsonx.data concepts, built with Kafka, Debezium, Flink, Trino, MinIO, OpenMetadata, Qdrant and Ollama.">
+<meta property="og:url" content="https://danielesalpietro.github.io/NORTHSTREAM/">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="NORTHSTREAM — Open-Source Real-Time Data Platform Simulator">
+<meta name="twitter:description" content="A local, open-source lab simulating CDC, streaming, lakehouse and AI-ready data — architecturally inspired by watsonx.data concepts.">
+
+<style>
+  :root {
+    --bg: #0b1220;
+    --bg-alt: #111a2e;
+    --panel: #161f36;
+    --border: #223052;
+    --text: #e6ecfb;
+    --text-dim: #9fb0d1;
+    --accent: #4fd1c5;
+    --accent-2: #7aa2ff;
+    --accent-soft: rgba(79, 209, 197, 0.12);
+    --radius: 14px;
+    --maxw: 1080px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1100px 500px at 15% -10%, rgba(122,162,255,0.18), transparent),
+      radial-gradient(900px 500px at 100% 0%, rgba(79,209,197,0.14), transparent),
+      var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .wrap {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  header.hero {
+    padding: 96px 0 72px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .eyebrow {
+    display: inline-block;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid rgba(79,209,197,0.35);
+    padding: 6px 14px;
+    border-radius: 999px;
+    margin-bottom: 24px;
+  }
+
+  h1 {
+    font-size: clamp(2.4rem, 5vw, 3.6rem);
+    line-height: 1.1;
+    margin: 0 0 20px;
+    background: linear-gradient(90deg, var(--text) 30%, var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .tagline {
+    font-size: clamp(1.05rem, 2vw, 1.25rem);
+    color: var(--text-dim);
+    max-width: 760px;
+    margin: 0 auto 40px;
+  }
+
+  .cta-row {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 13px 26px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 15px;
+    text-decoration: none !important;
+    border: 1px solid transparent;
+    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .btn-primary {
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    color: #06121b;
+  }
+  .btn-primary:hover { transform: translateY(-1px); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text);
+    border-color: var(--border);
+  }
+  .btn-ghost:hover { border-color: var(--accent); }
+
+  section {
+    padding: 72px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  section:last-of-type { border-bottom: none; }
+
+  h2 {
+    font-size: clamp(1.6rem, 3vw, 2rem);
+    margin: 0 0 12px;
+  }
+
+  .section-lead {
+    color: var(--text-dim);
+    max-width: 720px;
+    margin: 0 0 40px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 20px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+
+  .card h3 {
+    margin: 0 0 10px;
+    font-size: 1.05rem;
+    color: var(--accent);
+  }
+
+  .card p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 0.95rem;
+  }
+
+  .flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 40px;
+  }
+
+  .flow .node {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    white-space: nowrap;
+  }
+
+  .flow .arrow {
+    color: var(--text-dim);
+    font-size: 1.1rem;
+  }
+
+  table.matrix {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    font-size: 0.92rem;
+  }
+
+  table.matrix th, table.matrix td {
+    text-align: left;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  table.matrix th {
+    background: var(--bg-alt);
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  table.matrix tr:last-child td { border-bottom: none; }
+
+  table.matrix td.component { color: var(--accent); font-weight: 600; white-space: nowrap; }
+
+  .disclaimer-note {
+    margin-top: 16px;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+
+  pre {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    overflow-x: auto;
+    font-size: 0.88rem;
+  }
+
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+
+  ul.plain {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+  }
+
+  ul.plain li {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    color: var(--text-dim);
+    font-size: 0.92rem;
+  }
+
+  footer {
+    padding: 48px 0 72px;
+    color: var(--text-dim);
+    font-size: 0.88rem;
+  }
+
+  footer .foot-links {
+    margin-bottom: 20px;
+  }
+
+  footer .foot-links a { margin-right: 20px; color: var(--text); }
+
+  @media (max-width: 640px) {
+    header.hero { padding: 64px 0 48px; }
+    section { padding: 48px 0; }
+    table.matrix { font-size: 0.82rem; }
+    table.matrix th, table.matrix td { padding: 10px 12px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">Open Source &middot; Docker Compose &middot; Local-First</span>
+    <h1>NORTHSTREAM</h1>
+    <p class="tagline">
+      A local, open-source lab that simulates a real-time, governed, AI-ready data platform —
+      CDC, event streaming, lakehouse foundations, metadata governance, and local AI chat with data,
+      architecturally inspired by IBM watsonx.data, built entirely on open-source components.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/danielesalpietro/NORTHSTREAM">View on GitHub</a>
+      <a class="btn btn-ghost" href="https://github.com/danielesalpietro/NORTHSTREAM/blob/develop/docs/demo-script.md">Read the Demo Script</a>
+      <a class="btn btn-ghost" href="#modules">Open-Source Modules</a>
+    </div>
+  </div>
+</header>
+
+<section id="what">
+  <div class="wrap">
+    <h2>What is NORTHSTREAM?</h2>
+    <p class="section-lead">
+      NORTHSTREAM is not a product and not a production platform — it's a technical playground for
+      learning, presales storytelling, architecture validation, and internal enablement. It shows how
+      operational data can move from a transactional system into an event-streaming backbone, get
+      processed in real time, land in a lakehouse-style foundation, get governed through metadata and
+      catalog services, and finally become available to a local AI chat interface — end to end, on
+      your own laptop.
+    </p>
+    <div class="grid">
+      <div class="card">
+        <h3>Data in motion</h3>
+        <p>Change Data Capture from PostgreSQL streamed through Kafka, with schema governance in place from the start.</p>
+      </div>
+      <div class="card">
+        <h3>Governed lakehouse</h3>
+        <p>Object storage and a distributed SQL engine, cataloged and documented through an open metadata layer.</p>
+      </div>
+      <div class="card">
+        <h3>AI-ready data</h3>
+        <p>A retrieval-augmented agent grounds a small local LLM in live stream events instead of static or absent context.</p>
+      </div>
+      <div class="card">
+        <h3>Chat with data</h3>
+        <p>A local web chat interface lets you ask questions and compare grounded vs. ungrounded answers, live.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="section-lead">One storyline, ten steps, entirely inside Docker Compose on your own machine.</p>
+    <div class="flow">
+      <span class="node">PostgreSQL</span><span class="arrow">&rarr;</span>
+      <span class="node">Debezium CDC</span><span class="arrow">&rarr;</span>
+      <span class="node">Apache Kafka</span><span class="arrow">&rarr;</span>
+      <span class="node">Flink</span><span class="arrow">&rarr;</span>
+      <span class="node">MinIO + Trino</span><span class="arrow">&rarr;</span>
+      <span class="node">OpenMetadata</span><span class="arrow">&rarr;</span>
+      <span class="node">Qdrant + stream-agent</span><span class="arrow">&rarr;</span>
+      <span class="node">Ollama + Open WebUI</span>
+    </div>
+    <ul class="plain">
+      <li>1. Insert or update records in the PostgreSQL operational database.</li>
+      <li>2. Capture changes through Debezium CDC.</li>
+      <li>3. Publish events into Kafka topics.</li>
+      <li>4. Observe topics and messages from Kafka UI.</li>
+      <li>5. Process or enrich event streams with Flink.</li>
+      <li>6. Persist raw or curated data into MinIO.</li>
+      <li>7. Query data with Trino.</li>
+      <li>8. Register and document assets in OpenMetadata.</li>
+      <li>9. Ask questions through Ollama and Open WebUI.</li>
+      <li>10. Compare grounded vs. ungrounded answers via the Stream Context Agent.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="modules">
+  <div class="wrap">
+    <h2>Open-source building blocks, mapped to watsonx.data concepts</h2>
+    <p class="section-lead">
+      NORTHSTREAM is architecturally inspired by the real-time, governed, AI-ready data platform
+      narrative behind IBM watsonx.data — but every single component in this repository is free and
+      open-source, so the same concepts can be explored, taught and demoed without any licensed
+      software.
+    </p>
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th>Capability</th>
+          <th>Open-source component in NORTHSTREAM</th>
+          <th>Mirrors this watsonx.data-style concept</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="component">Event streaming</td>
+          <td>Apache Kafka + Kafka UI</td>
+          <td>A governed "data in motion" backbone feeding the lakehouse in real time</td>
+        </tr>
+        <tr>
+          <td class="component">Schema governance</td>
+          <td>Apicurio Registry</td>
+          <td>Schema compatibility and evolution guardrails for streaming data products</td>
+        </tr>
+        <tr>
+          <td class="component">CDC integration</td>
+          <td>Debezium + Kafka Connect</td>
+          <td>Real-time ingestion from operational/transactional sources</td>
+        </tr>
+        <tr>
+          <td class="component">Stream processing</td>
+          <td>Apache Flink</td>
+          <td>In-flight transformation and enrichment before landing in storage</td>
+        </tr>
+        <tr>
+          <td class="component">Lakehouse storage &amp; query</td>
+          <td>MinIO (S3-compatible) + Trino</td>
+          <td>Open, engine-agnostic table storage with federated SQL access</td>
+        </tr>
+        <tr>
+          <td class="component">Data catalog &amp; governance</td>
+          <td>OpenMetadata + Elasticsearch</td>
+          <td>Metadata, lineage and cataloging across the whole data estate</td>
+        </tr>
+        <tr>
+          <td class="component">Local AI / chat with data</td>
+          <td>Ollama + Open WebUI</td>
+          <td>A watsonx.ai-style conversational interface, running fully local</td>
+        </tr>
+        <tr>
+          <td class="component">Retrieval-augmented answers</td>
+          <td>Qdrant + FastAPI stream-agent</td>
+          <td>Grounding a model in fresh, governed data instead of static or absent context</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="disclaimer-note">
+      NORTHSTREAM is an independent open-source project and is not affiliated with, endorsed by, or
+      certified by IBM or any other vendor named above. All product names and trademarks belong to
+      their respective owners.
+    </p>
+  </div>
+</section>
+
+<section id="quickstart">
+  <div class="wrap">
+    <h2>Try it in minutes</h2>
+    <p class="section-lead">Clone the repo, start the stack, and run the actual demo — a small local model answering with and without live stream context.</p>
+    <pre><code>git clone https://github.com/danielesalpietro/NORTHSTREAM.git
+cd NORTHSTREAM
+
+# start the base stack + Stream Context Agent addon
+./start-addon.sh
+
+# register the CDC connector
+./register-connector.sh
+
+# ask the same question, with and without live stream grounding
+./demo-compare.sh</code></pre>
+  </div>
+</section>
+
+<section id="who">
+  <div class="wrap">
+    <h2>Who is this for?</h2>
+    <div class="grid">
+      <div class="card"><h3>Presales &amp; solution teams</h3><p>A talk-track and live demo environment for real-time, governed, AI-ready data conversations.</p></div>
+      <div class="card"><h3>Architects</h3><p>A sandbox to validate architectural patterns before committing to a platform choice.</p></div>
+      <div class="card"><h3>Learners</h3><p>A compact, hands-on way to see CDC, streaming, lakehouse and governance work together end to end.</p></div>
+      <div class="card"><h3>Internal enablement</h3><p>A repeatable workshop environment that runs entirely on a laptop, no cloud account required.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-links">
+      <a href="https://github.com/danielesalpietro/NORTHSTREAM">GitHub Repository</a>
+      <a href="https://github.com/danielesalpietro/NORTHSTREAM/blob/develop/README.md">Full Documentation</a>
+      <a href="https://github.com/danielesalpietro/NORTHSTREAM/blob/develop/docs/demo-script.md">Demo Script</a>
+      <a href="https://github.com/danielesalpietro/NORTHSTREAM/blob/develop/LICENSE">License</a>
+    </div>
+    NORTHSTREAM is an independent open-source lab concept for local, real-time, governed, AI-ready data
+    platform simulation. It is not affiliated with, endorsed by or certified by IBM, Confluent, Apache
+    Software Foundation, OpenMetadata, Ollama, Open WebUI, Trino, MinIO, Debezium or any other vendor
+    or open-source project mentioned above. All product names, trademarks and registered trademarks
+    are property of their respective owners.
+  </div>
+</footer>
+
+</body>
+</html>

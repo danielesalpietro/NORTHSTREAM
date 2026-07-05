@@ -5,7 +5,7 @@ services:
   # DATA IN MOTION / CONFLUENT-LIKE LAYER
   # ------------------------------------------------------------
   kafka:
-    image: bitnami/kafka:3.7
+    image: bitnamilegacy/kafka:3.7.1
     container_name: northstream-kafka
     hostname: kafka
     restart: unless-stopped
@@ -53,16 +53,14 @@ services:
         condition: service_started
  
   schema-registry:
-    image: apicurio/apicurio-registry:2.6.5.Final
+    image: apicurio/apicurio-registry:3.0.9
     container_name: northstream-schema-registry
     restart: unless-stopped
     ports:
       - "8081:8080"
     environment:
-      QUARKUS_PROFILE: prod
-      REGISTRY_STORAGE_KIND: kafkasql
-      REGISTRY_KAFKASQL_BOOTSTRAP_SERVERS: kafka:9092
-      REGISTRY_COMPATIBILITY_LEVEL: BACKWARD
+      APICURIO_STORAGE_KIND: kafkasql
+      APICURIO_KAFKASQL_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
       kafka:
         condition: service_healthy

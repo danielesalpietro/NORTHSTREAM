@@ -1,6 +1,19 @@
 name: wap-northstream-lab
- 
+
 services:
+  # ------------------------------------------------------------
+  # LANDING PAGE / ENTRY POINT
+  # ------------------------------------------------------------
+  landing-page:
+    image: nginx:alpine
+    container_name: northstream-landing
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html:ro
+      - ./dashboard.html:/usr/share/nginx/html/dashboard.html:ro
+
   # ------------------------------------------------------------
   # DATA IN MOTION / CONFLUENT-LIKE LAYER
   # ------------------------------------------------------------
@@ -91,7 +104,18 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
- 
+
+  adminer:
+    image: adminer:latest
+    container_name: northstream-adminer
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      - postgres
+
   debezium-connect:
     image: debezium/connect:2.7.3.Final
     container_name: northstream-debezium-connect

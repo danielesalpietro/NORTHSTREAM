@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NORTHSTREAM — Local Service Dashboard</title>
+<meta name="robots" content="noindex">
+
+<style>
+  :root {
+    --bg: #0b1220;
+    --bg-alt: #111a2e;
+    --panel: #161f36;
+    --border: #223052;
+    --text: #e6ecfb;
+    --text-dim: #9fb0d1;
+    --accent: #4fd1c5;
+    --accent-2: #7aa2ff;
+    --accent-soft: rgba(79, 209, 197, 0.12);
+    --radius: 14px;
+    --maxw: 1080px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1100px 500px at 15% -10%, rgba(122,162,255,0.18), transparent),
+      radial-gradient(900px 500px at 100% 0%, rgba(79,209,197,0.14), transparent),
+      var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .wrap {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  header {
+    padding: 56px 0 40px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .eyebrow {
+    display: inline-block;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid rgba(79,209,197,0.35);
+    padding: 6px 14px;
+    border-radius: 999px;
+    margin-bottom: 20px;
+  }
+
+  h1 {
+    font-size: clamp(1.8rem, 4vw, 2.6rem);
+    margin: 0 0 14px;
+  }
+
+  .lead {
+    color: var(--text-dim);
+    max-width: 760px;
+    margin: 0 0 4px;
+  }
+
+  .lead a { color: var(--accent-2); }
+
+  main { padding: 48px 0 72px; }
+
+  h2 {
+    font-size: 1.1rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 40px 0 16px;
+  }
+
+  h2:first-of-type { margin-top: 0; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    display: block;
+    color: var(--text);
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+
+  .card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    text-decoration: none;
+  }
+
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+  }
+
+  .card h3 {
+    margin: 0;
+    font-size: 1.02rem;
+    color: var(--text);
+  }
+
+  .badge {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
+  .badge-ui { background: rgba(79,209,197,0.15); color: var(--accent); border: 1px solid rgba(79,209,197,0.35); }
+  .badge-api { background: rgba(122,162,255,0.15); color: var(--accent-2); border: 1px solid rgba(122,162,255,0.35); }
+  .badge-db { background: rgba(230,236,251,0.08); color: var(--text-dim); border: 1px solid var(--border); }
+
+  .card p {
+    margin: 0 0 10px;
+    font-size: 0.88rem;
+    color: var(--text-dim);
+  }
+
+  .card .port {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.82rem;
+    color: var(--accent-2);
+  }
+
+  footer {
+    padding: 32px 0 56px;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    border-top: 1px solid var(--border);
+  }
+
+  footer a { color: var(--text); margin-right: 20px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <span class="eyebrow">Local Stack &middot; Docker Compose</span>
+    <h1>NORTHSTREAM Service Dashboard</h1>
+    <p class="lead">
+      NORTHSTREAM simulates a real-time, governed, AI-ready data platform end to end —
+      CDC, event streaming, lakehouse, governance and local AI chat with data — using
+      only open-source components. This page links every UI in the stack so you don't
+      have to remember ports during a demo or workshop.
+    </p>
+    <p class="lead"><a href="index.html">&larr; About NORTHSTREAM &amp; architecture</a></p>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <h2>Data in Motion</h2>
+    <div class="grid">
+      <a class="card" href="http://localhost:8088" target="_blank" rel="noopener">
+        <div class="card-top"><h3>Kafka UI</h3><span class="badge badge-ui">UI</span></div>
+        <p>Browse topics, messages, consumers and the Debezium connector.</p>
+        <span class="port">localhost:8088</span>
+      </a>
+      <a class="card" href="http://localhost:8081" target="_blank" rel="noopener">
+        <div class="card-top"><h3>Schema Registry</h3><span class="badge badge-ui">UI</span></div>
+        <p>Apicurio Registry — schema compatibility and governance.</p>
+        <span class="port">localhost:8081</span>
+      </a>
+      <a class="card" href="http://localhost:8083/connectors/northstream-postgres-connector/status" target="_blank" rel="noopener">
+        <div class="card-top"><h3>Debezium Connect</h3><span class="badge badge-api">API</span></div>
+        <p>Kafka Connect REST — CDC connector status and config.</p>
+        <span class="port">localhost:8083</span>
+      </a>
+    </div>
+
+    <h2>Operational Source</h2>
+    <div class="grid">
+      <div class="card" style="cursor:default;">
+        <div class="card-top"><h3>PostgreSQL</h3><span class="badge badge-db">DB</span></div>
+        <p>Source transactional database (db: sales, user: demo / demo). Not a web protocol — browse it via Adminer instead.</p>
+        <span class="port">localhost:5432</span>
+      </div>
+      <a class="card" href="http://localhost:8090/?pgsql=postgres&username=demo&db=sales" target="_blank" rel="noopener">
+        <div class="card-top"><h3>Adminer</h3><span class="badge badge-ui">UI</span></div>
+        <p>Web SQL client for PostgreSQL (server: postgres, user/pass: demo / demo).</p>
+        <span class="port">localhost:8090</span>
+      </a>
+    </div>
+
+    <h2>Stream Processing</h2>
+    <div class="grid">
+      <a class="card" href="http://localhost:8082" target="_blank" rel="noopener">
+        <div class="card-top"><h3>Flink Dashboard</h3><span class="badge badge-ui">UI</span></div>
+        <p>Job manager UI for real-time stream processing jobs.</p>
+        <span class="port">localhost:8082</span>
+      </a>
+    </div>
+
+    <h2>Lakehouse Foundation</h2>
+    <div class="grid">
+      <a class="card" href="http://localhost:9001" target="_blank" rel="noopener">
+        <div class="card-top"><h3>MinIO Console</h3><span class="badge badge-ui">UI</span></div>
+        <p>S3-compatible object storage (admin / Password123!).</p>
+        <span class="port">localhost:9001</span>
+      </a>
+      <a class="card" href="http://localhost:8080" target="_blank" rel="noopener">
+        <div class="card-top"><h3>Trino</h3><span class="badge badge-ui">UI</span></div>
+        <p>Distributed SQL query engine over the lakehouse.</p>
+        <span class="port">localhost:8080</span>
+      </a>
+    </div>
+
+    <h2>Data Intelligence / Governance</h2>
+    <div class="grid">
+      <a class="card" href="http://localhost:8585" target="_blank" rel="noopener">
+        <div class="card-top"><h3>OpenMetadata</h3><span class="badge badge-ui">UI</span></div>
+        <p>Data catalog, lineage and governance platform.</p>
+        <span class="port">localhost:8585</span>
+      </a>
+      <a class="card" href="http://localhost:9200" target="_blank" rel="noopener">
+        <div class="card-top"><h3>Elasticsearch</h3><span class="badge badge-api">API</span></div>
+        <p>Search backend behind OpenMetadata.</p>
+        <span class="port">localhost:9200</span>
+      </a>
+    </div>
+
+    <h2>AI / Chat with Data</h2>
+    <div class="grid">
+      <a class="card" href="http://localhost:3000" target="_blank" rel="noopener">
+        <div class="card-top"><h3>Open WebUI</h3><span class="badge badge-ui">UI</span></div>
+        <p>Chat with the baseline model and the grounded <code>northstream-grounded</code> model.</p>
+        <span class="port">localhost:3000</span>
+      </a>
+      <a class="card" href="http://localhost:11434" target="_blank" rel="noopener">
+        <div class="card-top"><h3>Ollama</h3><span class="badge badge-api">API</span></div>
+        <p>Local LLM runtime (API only, no web UI).</p>
+        <span class="port">localhost:11434</span>
+      </a>
+    </div>
+
+    <h2>Stream Context Agent (addon)</h2>
+    <div class="grid">
+      <a class="card" href="http://localhost:6333/dashboard" target="_blank" rel="noopener">
+        <div class="card-top"><h3>Qdrant Dashboard</h3><span class="badge badge-ui">UI</span></div>
+        <p>Vector store indexing live Kafka events for retrieval.</p>
+        <span class="port">localhost:6333</span>
+      </a>
+      <a class="card" href="http://localhost:8500/docs" target="_blank" rel="noopener">
+        <div class="card-top"><h3>Stream Agent</h3><span class="badge badge-api">API</span></div>
+        <p>Interactive API docs — <code>/chat</code>, <code>/compare</code>, <code>/events</code>, <code>/health</code>.</p>
+        <span class="port">localhost:8500</span>
+      </a>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a href="index.html">About NORTHSTREAM</a>
+    <a href="https://github.com/danielesalpietro/NORTHSTREAM">GitHub Repository</a>
+    <a href="https://github.com/danielesalpietro/NORTHSTREAM/blob/develop/docs/demo-script.md">Demo Script</a>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -124,10 +124,12 @@ A typical demo scenario is:
 
 | Layer | Service | Purpose | Default URL / Port |
 |---|---|---|---|
+| Landing Page | landing-page | Overview page linking to every service in the stack | [NORTHSTREAM Landing](http://localhost:8000) |
 | Streaming | Kafka | Event streaming backbone | `localhost:9092` |
 | Streaming UI | Kafka UI | Kafka topics, consumers, connectors visibility | [Kafka UI](http://localhost:8088) |
 | Schema Governance | Apicurio Registry | Schema registry compatible service | [Schema Registry](http://localhost:8081) |
 | Operational Source | PostgreSQL | Source transactional database | `localhost:5432` |
+| DB Web Client | Adminer | Web SQL client for the PostgreSQL source | [Adminer](http://localhost:8090) |
 | CDC / Integration | Debezium Connect | Kafka Connect runtime for CDC pipelines | [Kafka Connect](http://localhost:8083) |
 | Stream Processing | Apache Flink | Real-time stream processing | [Flink UI](http://localhost:8082) |
 | Object Storage | MinIO | S3-compatible lakehouse storage | [MinIO Console](http://localhost:9001) |
@@ -230,6 +232,10 @@ Check service status:
 ```bash
 docker compose -f docker-compose-northstream-ai.yml ps
 ```
+
+Open the landing page for an overview and links to every service:
+
+[http://localhost:8000](http://localhost:8000)
 
 Stop the platform:
 
@@ -431,6 +437,9 @@ User: demo
 Password: demo
 ```
 
+Browse it from a browser via [Adminer](http://localhost:8090) — System:
+PostgreSQL, Server: `postgres`, same user/password/database as above.
+
 ### MinIO
 
 ```text
@@ -517,6 +526,7 @@ northstream/
 +-- docker-compose-northstream-ai.yml
 +-- docker-compose.addon.yml
 +-- README.md
++-- index.html
 +-- init/
 |   +-- postgres/
 |       +-- 001-init-sales-db.sql

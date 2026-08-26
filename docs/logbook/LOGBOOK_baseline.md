@@ -51,3 +51,30 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
 - **Decisioni richieste all'owner**: nessuna bloccante. Facoltative: conferma del
   nome cartella archivio locale (`~/NORTHSTREAM-archive/`) e dell'account RunPod
   da usare per RP-0.
+
+## 2026-08-26 (2ª entry) — sessione remota (senza ambiente Docker) — Claude Code
+
+- **Obiettivo della sessione**: strutturare su GitHub tutte le fasi di sviluppo
+  come issue tracciabili, collegate al nuovo Project dell'owner.
+- **Fatto**:
+  - Create 6 issue di fase: #3 (Fase 0 → v0.0.1), #4 (Fase 1 → v0.0.2),
+    #5 (Fase 2 → v0.0.3), #6 (Fase 3 → v0.0.4), #7 (Fase 4 → v0.0.5),
+    #8 (Fase 5 → v0.1.0-beta1), ciascuna con gate di chiusura e regola del
+    train ("la fase N non si apre finché la N−1 non è taggata").
+  - Create 30 sub-issue collegate ai parent: #9–#15 (Fase 0), #16–#20 (Fase 1),
+    #21–#24 (Fase 2), #25–#30 (Fase 3), #31–#33 (Fase 4), #34–#38 (Fase 5).
+    Ogni sub-issue cita finding chiusi e progression test (XFAIL→PASS).
+  - Aggiornata tabella "Stato corrente" di CLAUDE.md con il tracking fasi.
+- **Decisioni prese**: la struttura rispecchia 1:1 la tabella release del piano
+  (§6); l'aggiunta delle issue al Project board non è automatizzabile dagli
+  strumenti disponibili in sessione → va fatta dall'owner o con il workflow
+  auto-add del Project.
+- **Test eseguiti**: nessuno (sessione senza Docker, lavoro solo issue/docs).
+- **Non funziona / sospeso**: invariato dalla entry precedente (tag baseline,
+  harness, RP-0, merge branch sessione).
+- **Prossimo passo per la sessione successiva**: eseguire la Fase 0 nell'ordine
+  delle sub-issue: #9 (tag+merge) → #10 (collaudo in macchina) → #11 (harness)
+  → #12 (CI) → #13 (run baseline) → #14 (fix documentali) → #15 (release v0.0.1).
+- **Decisioni richieste all'owner**: abilitare l'auto-add del Project (o
+  aggiungere manualmente #3–#38 al board) e, se gradito, configurare le colonne
+  per fase.

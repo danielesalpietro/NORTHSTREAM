@@ -46,9 +46,10 @@ la prima azione della sessione è segnalarlo nel logbook, non ricostruirlo a mem
 | **Baseline** | `develop` @ `5eb456a` — tag `v0.0.0-baseline` **ancora da creare** |
 | **Branch di lavoro** | `claude/project-plan-review-473nje` (review + piano + direttive; da mergiare in `develop` con v0.0.1) |
 | **Ultimo run T0** | mai eseguito — il harness `bench/` non esiste ancora (arriva con v0.0.1) |
-| **Prossima azione** | tag `v0.0.0-baseline`; branch `release/v0.0.1`: harness `bench/t0/`, mock-ollama, CI, fix documentali O2; primo run T0 contro la baseline |
-| **Blocchi aperti** | RP-0 (probe DinD su RunPod) non ancora eseguito |
-| **Issue di riferimento** | [#2](https://github.com/danielesalpietro/NORTHSTREAM/issues/2) (review) · [#1](https://github.com/danielesalpietro/NORTHSTREAM/issues/1) (Norimberga: decisione rimandata alla matrice EVAL, §4.2 del piano) |
+| **Prossima azione** | Fase 0, sub-issue in ordine: [#9](https://github.com/danielesalpietro/NORTHSTREAM/issues/9) tag baseline+merge → [#10](https://github.com/danielesalpietro/NORTHSTREAM/issues/10) collaudo in macchina → [#11](https://github.com/danielesalpietro/NORTHSTREAM/issues/11)–[#15](https://github.com/danielesalpietro/NORTHSTREAM/issues/15) |
+| **Blocchi aperti** | RP-0 (probe DinD su RunPod, issue #34) non ancora eseguito |
+| **Tracking fasi** | Fase 0 [#3](https://github.com/danielesalpietro/NORTHSTREAM/issues/3) · Fase 1 [#4](https://github.com/danielesalpietro/NORTHSTREAM/issues/4) · Fase 2 [#5](https://github.com/danielesalpietro/NORTHSTREAM/issues/5) · Fase 3 [#6](https://github.com/danielesalpietro/NORTHSTREAM/issues/6) · Fase 4 [#7](https://github.com/danielesalpietro/NORTHSTREAM/issues/7) · Fase 5 [#8](https://github.com/danielesalpietro/NORTHSTREAM/issues/8) — ogni fase ha sub-issue collegate; una fase si apre solo col tag della precedente |
+| **Issue di riferimento** | [#2](https://github.com/danielesalpietro/NORTHSTREAM/issues/2) (review) · [#1](https://github.com/danielesalpietro/NORTHSTREAM/issues/1) (Norimberga: decisione in Fase 5, issue #36) |
 
 ## 3. Regole non negoziabili
 

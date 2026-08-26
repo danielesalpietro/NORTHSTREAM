@@ -390,7 +390,8 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
   contro il tag `v0.0.0-baseline`** (issue #13). Prima sessione del progetto con un
   demone Docker vero *e* modelli veri.
 
-- **Fatto**:
+- **Fatto** (commit `111665a` per #10, `1f77c67` per #13, più un terzo che
+  registra questi SHA nel logbook):
   - Ricostruita e scritta la 5ª entry, mancante, della sessione ENV-W archiviata dal
     timeout SSH (`CLAUDE.md` §6). Aveva prodotto un solo artefatto durevole — il tag
     `v0.0.0-baseline` — e lasciato il connettore CDC **non** registrato.
@@ -502,7 +503,8 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
     `git push origin local/release-v0.0.1:release/v0.0.1` fallisce con
     `fatal: could not read Username for 'https://github.com'` (exit 128), esattamente
     come era successo alla sessione precedente col tag. **I due commit di questa
-    sessione esistono solo sulla Z8** (`fdc1ecf` logbook, `2326a6a` report + §2, sul
+    sessione esistono solo sulla Z8** (`111665a` logbook, `1f77c67` report + §2, più il commit che aggiunge questi
+    SHA, sul
     branch locale `local/release-v0.0.1` che traccia `origin/release/v0.0.1`), e i
     commenti alle issue #10 e #13 non sono stati postati. La ricostruzione a
     posteriori (§6 di `CLAUDE.md`) esiste proprio per questo caso: chi riprende
@@ -518,8 +520,8 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
   dichiara. Prima del tag, decidere sui due punti aperti qui sotto.
 
 - **Decisioni richieste all'owner**:
-  1. **Sbloccare GitHub su ENV-W — prerequisito di tutto il resto.** Due commit
-     (`fdc1ecf`, `2326a6a`) sono pronti e non pushabili, e i commenti a #10 e #13
+  1. **Sbloccare GitHub su ENV-W — prerequisito di tutto il resto.** Tre commit
+     (`111665a`, `1f77c67` e la correzione degli SHA) sono pronti e non pushabili, e i commenti a #10 e #13
      non sono postabili. Basta un `gh auth login` sulla Z8 (che configura anche il
      credential helper per git), oppure una deploy key / un PAT in
      `~/.git-credentials`. Fino ad allora ENV-W misura ma non pubblica: qualunque

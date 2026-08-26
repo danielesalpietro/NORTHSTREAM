@@ -97,17 +97,36 @@ jobs:
           NS_AGENT_TIMEOUT: "120"
         run: bench/t0/run.sh --suite ci --env ci-smoke --report results/ci-smoke
 
+      # Proves the manifest really recorded what ran: image digests come from the
+      # live containers, so this is the only place the Docker path is exercised.
+      - name: Show the archive the harness produced
+        if: always()
+        run: |
+          python3 -c '
+          import json, pathlib
+          m = json.loads(pathlib.Path("results/ci-smoke/manifest.json").read_text())
+          stack = m.get("stack", {})
+          print("images recorded:", len(stack.get("images", [])))
+          for image in stack.get("images", []):
+              print("  {:<34} {:<42} {}".format(
+                  image["container"], image["image"], image["image_id"][:19]))
+          print("models recorded:", stack.get("models"))
+          '
+          echo "--- SHA256SUMS"
+          head -3 results/ci-smoke/SHA256SUMS
+          ( cd results/ci-smoke && sha256sum -c --status SHA256SUMS && echo "checksums verify" )
+
       - name: Collect container logs
         if: always()
         run: |
-          mkdir -p results/ci-smoke/logs
+          mkdir -p results/ci-smoke-logs
           for service in kafka postgres debezium-connect qdrant ollama stream-agent data-generator; do
             docker compose \
               -f docker-compose-northstream-ai.yml \
               -f docker-compose.addon.yml \
               -f bench/ci/mock-ollama.yml \
               logs --no-color --tail 400 "$service" \
-              >"results/ci-smoke/logs/${service}.log" 2>&1 || true
+              >"results/ci-smoke-logs/${service}.log" 2>&1 || true
           done
 
       - name: Upload report

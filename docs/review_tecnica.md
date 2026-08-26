@@ -74,6 +74,22 @@ ES 8.x in container richiede `vm.max_map_count ≥ 262144`; Docker Desktop/WSL2 
 
 **P-8 [MINOR] — Varie compose**: `create-minio-bucket` usa `sleep 5` invece di un retry/healthcheck (race benigna ma inelegante); `trino` dichiara `depends_on: minio` che è oggi ironico (nessun catalogo lo collega a MinIO); il progetto si chiama `name: wap-northstream-lab` — il prefisso `wap-` non è spiegato da nessuna parte ed entra nei nomi di rete/volumi; Flink, Trino, Ollama, MinIO non hanno healthcheck; il file `.env` (copia del tier Recommended) è tracciato in git, quindi cambiare modello localmente sporca il working tree — meglio `.env.example` + `.env` in `.gitignore`.
 
+**P-9 [MAJOR] — I tre script del Quick Start non sono eseguibili su un clone pulito. [Aggiunto il 26/08/2026, confermato per prova su ENV-W.]**
+`start-addon.sh`, `register-connector.sh` e `demo-compare.sh` sono committati con modo `100644` invece di `100755` (`bench/t0/run.sh`, aggiunto dopo, è correttamente `100755`). Su un clone pulito il bit di esecuzione manca e il Quick Start si ferma **al primo comando**:
+
+```
+$ ls -l start-addon.sh
+-rw-rw-r-- 1 admin admin 437 Aug 26 21:52 start-addon.sh
+$ ./start-addon.sh --help
+/bin/bash: line 1: ./start-addon.sh: Permission denied
+exit=126
+```
+
+L'exit code 126 anziché 127 è la firma esatta della diagnosi: il file esiste, manca il permesso. Il difetto non si vede mai sulla macchina dell'autore, dove i file sono stati creati con il bit già impostato — è visibile solo a chi clona, cioè a *chiunque altro*. Per un progetto che si presenta come materiale di enablement, il primo comando del README che fallisce è il peggior biglietto da visita possibile. Fix: `git update-index --chmod=+x` sui tre file. Assegnato a v0.0.2 insieme agli altri interventi di riproducibilità.
+
+**P-10 [MAJOR] — Il teardown di `ci-nightly` cancella i modelli a ogni esecuzione. [Aggiunto il 26/08/2026 su segnalazione della sessione ENV-W.]**
+L'ultimo step del workflow `ci-nightly` esegue `docker compose ... down -v`. Il flag `-v` rimuove i volumi del progetto, `ollama_data` compreso: ogni nightly cancellerebbe i modelli Granite e il run successivo li riscaricherebbe da capo — diversi GB e diversi minuti a ogni notte, su un runner self-hosted dove lo spazio non è il vincolo. Il difetto è oggi **latente**, perché `ci-nightly` è dormiente dietro il gate `if: vars.RUN_NIGHTLY == 'true'`, ma si manifesterebbe alla prima notte utile dopo l'accensione della variabile. **Va corretto prima che `RUN_NIGHTLY` venga impostata**: `down` senza `-v`, con eventuale pulizia selettiva dei soli volumi di stato (Qdrant, Postgres) se si vuole un ambiente pulito a ogni run.
+
 ### 3.2 stream-agent (`app.py`)
 
 **A-1 [MAJOR] — Il retrieval della demo di punta non è semantico: è keyword matching con contorno RAG.**

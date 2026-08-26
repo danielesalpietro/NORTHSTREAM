@@ -9,13 +9,15 @@ forma compressa della fase, e alla chiusura diventa l'ESITO FASE.
 
 ---
 
-## SINTESI DI FASE — aggiornata al 2026-08-26, 21:30 UTC
+## SINTESI DI FASE — aggiornata al 2026-08-26, 22:05 UTC
 
-**Dove siamo**: Fase 0 sostanzialmente completa. Tag `v0.0.0-baseline` → `5eb456a`
+**Dove siamo**: Fase 0 completa sul piano tecnico. Tag `v0.0.0-baseline` → `5eb456a`
 pubblicato. Su `release/v0.0.1`: harness `bench/t0/` (12 test), tre workflow CI
-(static e smoke verdi), fix documentali con T0.12 passato a PASS, e il **run di
-riferimento ENV-W** con modelli reali. Restano due fix del harness (issue #11,
-assegnati) e poi il tag `v0.0.1` (#15, azione dell'owner).
+(`ci-static` e `ci-smoke` **verdi**), fix documentali (T0.12 flippato), collaudo in
+macchina e **run T0 di riferimento archiviato**. Resta solo #15: il tag `v0.0.1`,
+azione dell'owner. **ENV-W pubblica di nuovo su GitHub** (blocco risolto, v. sotto);
+lo stack sulla Z8 è **spento** con i volumi conservati; **P-9 è confermato per
+prova**; il runner self-hosted `env-w` è **preparato ma non ancora registrato**.
 
 **Decisioni prese, con il perché**
 - **Storyline README accorciata, non costruita**: i layer non collegati (Flink,
@@ -30,53 +32,65 @@ assegnati) e poi il tag `v0.0.1` (#15, azione dell'owner).
 - **Scenografia congelata** fino a dopo v0.1.0-beta1.
 - **Issue #1 (Norimberga/MoE)**: decisione rimandata ai numeri della matrice EVAL
   (Fase 5) — la premessa dell'issue era imprecisa, il tier Optimal è già MoE.
-- **I tag di release sono un'azione locale dell'owner**: le sessioni cloud hanno
-  il push dei tag rifiutato dal proxy git (403) e la Z8 non aveva credenziali
-  GitHub fino al `gh auth login` del 26/08.
+- **I tag di release sono un'azione locale**: le sessioni cloud hanno il push dei
+  tag rifiutato dal proxy git (HTTP 403, verificato).
 - **Le sessioni bridge (CLI locale) si raggiungono solo** via `create_trigger`
   con `persistent_session_id` + `fire_trigger`; non espongono `usage`.
-- **T0.10 lasciato XFAIL nonostante l'XPASS**: mettere PASS avrebbe cristallizzato
-  nel metro di riferimento un difetto che non è risolto (v. numeri sotto).
-- **Due lacune del harness bloccano il tag v0.0.1**: un harness che non implementa
-  la convenzione di archiviazione del piano la scarica sull'operatore, e prima o
-  poi qualcuno la salta.
+- **P-5 (tier RAM) non è verificabile su ENV-W**: con 256 GB fisici le JVM
+  auto-dimensionano l'heap e i pesi dei modelli stanno in VRAM. Serve ENV-L o
+  `mem_limit` espliciti (v0.0.3, T-PROF).
+- **Le attese di `expected/baseline.json` non si piegano ai risultati**: l'XPASS
+  di T0.10 non è stato promosso a PASS, perché avrebbe cristallizzato nel metro
+  di riferimento una proprietà che il run non dimostra.
+- **`NS_RECENCY_SECONDS` = 300 di default** e tetto per-test derivato dai
+  parametri del test: un test che coi soli default non può finire è un test che
+  non flipperà mai da solo.
+- **`RUN_NIGHTLY` si imposta separatamente dalla registrazione del runner, e di
+  proposito** (9ª entry): la variabile *è* l'interruttore della nightly, non un
+  dettaglio di configurazione. `ci-nightly` ha `schedule: cron "30 2 * * *"` e il
+  gate `if: vars.RUN_NIGHTLY == 'true'`, quindi impostarla accende la nightly
+  della notte stessa; e il suo ultimo step è `docker compose ... down -v`, che
+  **cancella `ollama_data`**. Registrare il runner e accendere la nightly sono
+  due decisioni distinte e vanno prese distintamente.
 
 **Numeri misurati**
-- **Run di riferimento O1.3** `20260826-2053-envw-5eb456a` (ENV-W, modelli reali,
-  suite `full` contro il tag): **5 PASS + 6 XFAIL + 1 XPASS**, `RESULT: OK`.
-  O1.2 verificato: il worktree del tag è rimasto immodificato.
-- **Confermati per misura**: P-1 (il bootstrap risponde ma annuncia `kafka:9092`;
-  il consumo muore su `Failed to resolve`), P-2 (`SHOW CATALOGS` → solo `system`),
-  A-2, A-3 (crescita punti = 0 dopo restart), A-5. Erano deduzioni statiche.
-- **P-6 non riproducibile su ENV-W**: l'host ha già `vm.max_map_count=1048576` via
-  `/etc/sysctl.d/`. Non smentito: resta valido per un host Linux generico.
-- **A-8 corretto**: non è "circa 5 minuti" ma una variabile uniforme in [0, 5 min]
-  — misurato a 8 s sulla Z8 contro 4m46s in CI. Non deterministico, il che per una
-  demo è peggio di un ritardo costante.
-- **T0.10 XPASS spiegato**: collection di 61 punti (piccola *a causa di A-3*), con
-  `top_k=5` il match letterale entra nei primi cinque senza embedding forte. A-1
-  resta vero nel meccanismo; la premessa sul ranking non è confermata su corpus
-  piccolo. Issue #40.
-- **Risorse ENV-W**: 9,52 GiB RSS per 19 container, 6,5 GB in VRAM. **P-5 resta
-  aperto** e questo numero non lo verifica (JVM non compresse + pesi in VRAM);
-  serve ENV-L o `mem_limit`.
-- **T0.12 XFAIL → PASS**: progression test dichiarato di v0.0.1.
-- Costo del processo: 81,6 M token letti da cache contro 310 mila generati
-  (263:1), ~$103,81 nozionali. Il costo è rilettura, non generazione.
-- Percorso di onboarding: 101 KB, ~28.800 token.
+- **Run di riferimento** `20260826-2053-envw-5eb456a` (ENV-W, modelli reali,
+  suite `full` contro il tag): **5 PASS + 6 XFAIL + 1 XPASS**, `RESULT: OK`. È il
+  metro di ogni release successiva.
+- **P-1, P-2, A-2, A-3, A-5 confermati per misura**; **D-1/D-2/P-1 doc** chiusi da
+  T0.12 (XFAIL → PASS, il progression test dichiarato per v0.0.1).
+- **A-8 scoperto per misura**: agent cieco ai topic CDC per **4 min 46 s**
+  seguendo l'ordine documentato. Non era nella review. Issue #39, fix in v0.0.4.
+- **XPASS di T0.10 spiegato**: con 61 punti in collection e `top_k=5` il match
+  letterale entra comunque; il test dipende dalla dimensione del corpus → issue
+  #40, da rafforzare prima che il suo esito significhi qualcosa.
+- **P-9 confermato su clone pulito** (9ª entry): i tre script del Quick Start sono
+  `100644` in git e `./start-addon.sh --help` termina con **exit 126**,
+  `Permission denied`. Non è un file mancante (sarebbe 127): manca il bit di
+  esecuzione. È il primo comando del Quick Start.
+- RSS totale dello stack full su ENV-W: **9,52 GiB** (non è una verifica di P-5).
+- Costo del processo: ~81,6 M token letti da cache contro ~310 mila generati
+  (263:1). Il costo è rilettura, non generazione.
 
 **Aperto**
-- Due fix del harness prima del tag (#11): archiviazione conforme al piano §3
-  (`SHA256SUMS` + versioni immagini/modelli nel manifest) e default di T0.9
-  internamente coerenti (`NS_RECENCY_SECONDS` > `NS_TEST_TIMEOUT`).
-- #15 (tag `v0.0.1`) attende l'owner. #40 (robustezza di T0.10) in Fase 3.
-- **P-9 proposto** dalla Z8: i tre script del Quick Start sono `100644` in git,
-  quindi `./start-addon.sh` non è eseguibile su un clone pulito. Da valutare.
-- RP-0 (probe DinD su RunPod) non eseguito; runner self-hosted `env-w` e variabile
-  `RUN_NIGHTLY` da configurare; limite settimanale `claude-fable-5` fino al ~28/08.
+- #15 (tag `v0.0.1`) — unica azione mancante per chiudere la fase, spetta all'owner.
+- **Runner self-hosted `env-w`**: tarball estratto e pronto in
+  `~/actions-runner-northstream/` sulla Z8, **registrazione da eseguire**
+  (comando nella 9ª entry). `RUN_NIGHTLY` **volutamente non impostata**.
+- #40 (T0.10 fragile), **P-9 (confermato, da formalizzare e assegnare a v0.0.2)**,
+  RP-0.
+- **Teardown distruttivo di `ci-nightly`**: `down -v` a fine job cancella
+  `ollama_data` a ogni nightly. Da valutare in v0.0.2 prima di accendere la nightly.
 
-**Prossimo passo**: chiusi i due fix del harness e verde la CI, chiedere all'owner
-il tag `v0.0.1` e chiudere la fase con l'ESITO FASE.
+**Risolto rispetto alla testa precedente**
+- **ENV-W può di nuovo pubblicare su GitHub**: `gh auth status` → autenticato come
+  `danielesalpietro` (scope `repo`), `ssh -T git@github.com` → autenticazione OK,
+  `git push --dry-run` → exit 0. Il blocco che rendeva ENV-W «un ambiente che
+  misura ma non pubblica» non c'è più.
+
+**Prossimo passo**: l'owner appone il tag `v0.0.1`; in parallelo registra il runner
+`z8-env-w` (#12). Poi si apre la Fase 1 (v0.0.2) con i progression test T0.6
+(doppio listener Kafka) come primo obiettivo, e con P-9 nello scope.
 
 ---
 
@@ -675,3 +689,188 @@ il tag `v0.0.1` e chiudere la fase con l'ESITO FASE.
   verificare il gate di v0.0.1 e chiedere all'owner il tag.
 - **Decisioni richieste all'owner**: nessuna nuova. Restano aperte: registrazione
   del runner self-hosted `env-w` e tag `v0.0.1` quando il gate è verde.
+
+## 2026-08-26 (8ª entry) — sessione remota (nessun demone Docker) — Claude Code, sessione operativa Fase 0
+
+- **Obiettivo della sessione**: chiudere le due lacune del harness (#11) trovate
+  dal run di riferimento ENV-W, richieste dalla supervisione prima del tag v0.0.1.
+- **Fatto** (branch `release/v0.0.1`):
+  - `dfcc90c` — merge delle nuove regole da `claude/project-plan-review-473nje`
+    (SINTESI DI FASE, compressione della memoria, costo di processo, policy
+    modelli, tmux su ENV-W). Conflitto sul logbook risolto tenendo **tutte** le
+    entry: le 5ª e 6ª (ENV-W) sono citate per numero nella tabella §2 di
+    `CLAUDE.md`, quindi non rinumerabili; quella della supervisione è diventata 7ª.
+  - `c304694` + fix successivo — le due lacune:
+    1. **Archiviazione §3 ora automatica**: ogni run scrive `SHA256SUMS` (e lo
+       verifica subito) e il `manifest.json` porta la sezione `stack` con image id
+       e digest dei container `northstream-*` più i modelli Ollama. Senza demone
+       Docker la sezione resta **vuota invece di sparire**: "niente osservato" è
+       un'informazione, l'omissione silenziosa no.
+    2. **Default coerenti su T0.9**: `NS_RECENCY_SECONDS` passa a 300 e il tetto
+       del singolo test si deriva dai parametri del test stesso
+       (`NS_RECENCY_SECONDS + 300`). Chi vuole l'asserzione forte passa 900 e
+       ottiene 1200 s senza toccare altro — prima 900 contro un tetto di 600
+       significava che T0.9 **non poteva finire**, quindi non avrebbe mai potuto
+       flippare in v0.0.4.
+- **Decisioni prese**:
+  - **`NS_RECENCY_SECONDS` = 300, non 900.** L'asserzione è più debole (il
+    contesto conserva eventi più vecchi di 5 minuti invece di 15) ma regge coi
+    soli default, che è la proprietà che serve a un test destinato a flippare da
+    solo in CI. Documentato in `bench/README.md` insieme al modo per rinforzarla.
+  - **Verifica del percorso Docker delegata a ci-smoke.** Questa sessione non ha
+    un demone Docker, quindi `collect_environment` era testabile solo nel ramo
+    "nessun container". Ho aggiunto a ci-smoke uno step che stampa ciò che il
+    manifest ha registrato ed esegue `sha256sum -c`: l'unico ambiente con
+    container vivi è l'unico che può dimostrare quel codice.
+  - **Log dei container spostati fuori dalla cartella del report** (`results/
+    ci-smoke-logs/`): venivano raccolti *dopo* la generazione di `SHA256SUMS`, e
+    un archivio che contiene file non elencati nei propri checksum è meno
+    verificabile di quanto sembri.
+  - **Non toccati**: `expected/baseline.json` (la Z8 ha fatto bene a lasciare
+    T0.10 XFAIL) e T0.10 stesso, la cui debolezza è la issue #40 in Fase 3.
+- **Test eseguiti**:
+  - `bench/t0/run.sh --suite static` → T0.1 PASS, T0.12 PASS; `SHA256SUMS` di 7
+    file generato e verificato in modo indipendente (`sha256sum -c` → 7/7 OK);
+    `manifest.json` con la chiave `stack`.
+  - `test_timeout_for` con `NS_RECENCY_SECONDS=900` → **1200 s** per T0.9 e 600 s
+    per gli altri; coi default → 600 s.
+  - **ci-smoke run `33015781417` verde** su `c304694`: **7 immagini registrate**
+    con id (stream-agent, debezium/connect:2.7.3.Final, data-generator,
+    bitnamilegacy/kafka:3.7.1, qdrant/qdrant:latest, postgres:16,
+    northstream/mock-ollama:ci) e `checksums verify`. Il percorso Docker è
+    dimostrato, non supposto.
+- **Non funziona / sospeso**:
+  - **Difetto mio, trovato dal run CI e corretto subito**: catturavo l'output di
+    `docker exec ... ollama list` senza guardare l'exit status, così sul mock (che
+    non ha il binario `ollama`) il messaggio `OCI runtime exec failed ...` è
+    finito **dentro** la lista dei modelli del manifest. Un manifest che registra
+    un errore come se fosse un modello è precisamente il tipo di falso che questo
+    lavoro serve a evitare. Ora conta l'exit status: exec fallito → nessun modello
+    osservato.
+  - Restano fuori dal mio scope e aperti: XPASS di T0.10 (#40), P-9 sugli script
+    non eseguibili, runner self-hosted + `RUN_NIGHTLY`, RP-0.
+- **Prossimo passo per la sessione successiva**: il gate di v0.0.1 è verde
+  (ci-static + ci-smoke, run di riferimento archiviato, T0.12 flippato). Resta
+  solo il tag `v0.0.1` (#15), che appone l'owner.
+- **Decisioni richieste all'owner**: nessuna nuova da parte mia.
+
+## 2026-08-26 (9ª entry) — ENV-W (HP Z8 G4) — Claude Code, sessione bridge schedulata (supervisione per conto dell'owner)
+
+- **Obiettivo della sessione**: tre azioni circoscritte, senza onboarding completo:
+  (1) registrare il runner GitHub Actions self-hosted `env-w` per attivare
+  `ci-nightly` (#12); (2) verificare per prova il finding proposto **P-9**;
+  (3) spegnere lo stack conservando i volumi.
+
+- **Fatto**:
+  - **P-9 confermato per misura** (punto 2) — evidenza integrale in
+    "Test eseguiti". Pronto da formalizzare come finding.
+  - **Stack spento** (punto 3): `down` **senza `-v`**. 19 container rimossi, rete
+    `wap-northstream-lab_default` rimossa, **tutti e 8 i volumi
+    `wap-northstream-lab_*` intatti** — `ollama_data` compreso. 23 volumi sulla
+    macchina prima, 23 dopo. RAM: da ~10 GiB a 8,7 GiB usati su 235.
+  - **Runner: preparato, non registrato** (punto 1) — v. "Non funziona / sospeso".
+  - Nessun commit di codice. Oltre a questa entry e alla testa del logbook, ho
+    aggiornato la riga **Blocchi aperti** di `CLAUDE.md` §2 (obbligo di §6.4):
+    diceva ancora che ENV-W non pubblica — falso da questa sessione — e dava P-9
+    per "proposto".
+
+- **Decisioni prese**:
+  - **`RUN_NIGHTLY` NON impostata a `true`, deliberatamente.** È la decisione che
+    conta di questa sessione. La richiesta conteneva
+    `gh variable set RUN_NIGHTLY --body true` e, poche righe sotto,
+    «**non lanciare la nightly stasera**: serve solo che il runner esista». Le due
+    istruzioni non possono valere insieme: `ci-nightly` ha
+    `schedule: cron "30 2 * * *"` e il gate `if: vars.RUN_NIGHTLY == 'true'`,
+    quindi impostare la variabile alle 22:0x UTC **è** schedulare la nightly per
+    le 02:30 UTC di stanotte, fra ~4 ore e mezza. E l'ultimo step di `ci-nightly`
+    è `docker compose ... down -v`: la nightly avrebbe cancellato `ollama_data`,
+    cioè il danno preciso da cui il punto 3 mette in guardia («costringerebbe a
+    riscaricare i modelli Granite»). Fra le due letture ho tenuto l'intento, che
+    è dichiarato due volte e senza ambiguità (runner sì, nightly no), e ho
+    lasciato la variabile all'owner. Il costo dell'asimmetria è a favore di
+    questa scelta: accendere la variabile è un comando da cinque secondi,
+    ricaricare i modelli Granite no.
+  - **Runner estratto dal tarball già presente sulla Z8** invece che dall'URL
+    indicato: `releases/latest/download/actions-runner-linux-x64.tar.gz` non
+    esiste — gli asset di `actions/runner` sono versionati — e avrebbe dato 404.
+    Ho usato `~/actions-runner/actions-runner-linux-x64-2.336.0.tar.gz`, la stessa
+    versione del runner `vMemoryFabric` che su questa macchina funziona, evitando
+    anche un download da 226 MB.
+  - **Il runner dell'altro repository non è stato toccato**: directory dedicata
+    `~/actions-runner-northstream/`, e a fine sessione
+    `actions.runner.danielesalpietro-vMemoryFabric.berlin-3eie.service` è
+    verificato ancora `active`.
+  - **`down` eseguito con i due file indicati e non con i tre di avvio**: lo stack
+    era stato avviato anche con `docker-compose.gpu.yml`, ma il nome progetto è
+    pinnato da `name: wap-northstream-lab` dentro il compose, quindi i due file
+    colpiscono comunque il progetto giusto. Verificato con `--dry-run` prima di
+    eseguire, invece che assunto.
+
+- **Test eseguiti**:
+  - **P-9 → CONFERMATO.** Clone pulito (`git clone --depth 1` di `develop`):
+    ```
+    $ ls -l start-addon.sh register-connector.sh demo-compare.sh
+    -rw-rw-r-- 1 admin admin 311 Aug 26 21:52 demo-compare.sh
+    -rw-rw-r-- 1 admin admin 360 Aug 26 21:52 register-connector.sh
+    -rw-rw-r-- 1 admin admin 437 Aug 26 21:52 start-addon.sh
+
+    $ ./start-addon.sh --help
+    /bin/bash: line 1: ./start-addon.sh: Permission denied
+    exit=126
+    ```
+    `git ls-files -s` sugli stessi path: `100644` per tutti e tre, contro
+    `100755` di `bench/t0/run.sh`. **exit 126, non 127**: il file esiste, manca il
+    bit di esecuzione — la diagnosi del finding è esatta. Colpisce chiunque segua
+    il Quick Start del README da zero, ed è il **primo** comando della sequenza.
+  - `docker compose -f docker-compose-northstream-ai.yml -f docker-compose.addon.yml down`
+    → exit 0. Verifiche successive: `docker compose ls` → vuoto;
+    `docker ps -a --filter label=com.docker.compose.project=wap-northstream-lab`
+    → vuoto; `docker volume ls | grep wap-northstream-lab` → 8 volumi presenti.
+  - `ssh -T git@github.com` → autenticato come `danielesalpietro`;
+    `git push --dry-run origin local/release-v0.0.1:release/v0.0.1` → exit 0.
+    **Il blocco "ENV-W non pubblica" è superato** (era il blocco n.1 della testa).
+  - Nessun run T0: fuori scope, e lo stack è stato spento come richiesto.
+
+- **Costo della sessione**: non misurabile (sessione bridge, `usage` non esposto).
+
+- **Non funziona / sospeso**:
+  - **Punto 1 non completato: `./config.sh` è stato bloccato dal classificatore di
+    auto-mode della CLI**, non da GitHub e non per un problema di credenziali (il
+    token di registrazione è ottenibile: `gh` ha lo scope `repo`). In una sessione
+    schedulata non c'è nessuno che possa approvare il prompt, e non ho aggirato il
+    blocco. Stato lasciato: `~/actions-runner-northstream/` con il runner 2.336.0
+    estratto e pronto; **nessuna registrazione presso GitHub**
+    (`gh api .../actions/runners` → lista vuota), **nessun servizio installato**,
+    nessun effetto sul repository. Comando esatto per completare: v. "Decisioni
+    richieste all'owner".
+  - `RUN_NIGHTLY` resta non impostata per scelta: finché lo è, `ci-nightly` è
+    dormiente anche a runner registrato — il gate salta il job e lo schedule non
+    accoda run che nessuno serve.
+  - Restano aperti e fuori dal mio scope: #40 (T0.10 fragile), RP-0, #15 (tag).
+
+- **Prossimo passo per la sessione successiva**: far completare all'owner la
+  registrazione del runner (due comandi, sotto) e solo dopo — quando si vuole
+  davvero la prima nightly — impostare `RUN_NIGHTLY`.
+
+- **Decisioni richieste all'owner**:
+  1. **Registrare il runner** dalla propria sessione sulla Z8 (tarball già pronto,
+     nessun download necessario):
+     ```
+     cd ~/actions-runner-northstream
+     ./config.sh --url https://github.com/danielesalpietro/NORTHSTREAM \
+       --token "$(gh api -X POST repos/danielesalpietro/NORTHSTREAM/actions/runners/registration-token --jq .token)" \
+       --name z8-env-w --labels env-w --unattended
+     sudo ./svc.sh install && sudo ./svc.sh start
+     ```
+     Verifica attesa (`z8-env-w`, *online/idle*, label `env-w`):
+     ```
+     gh api repos/danielesalpietro/NORTHSTREAM/actions/runners \
+       --jq '.runners[] | {name,status,labels:[.labels[].name]}'
+     ```
+  2. **`RUN_NIGHTLY`** (`gh variable set RUN_NIGHTLY --body true`): da eseguire
+     **di proposito**, sapendo che accende la nightly delle 02:30 UTC successive.
+  3. **Teardown di `ci-nightly`**: valutare se il `down -v` finale debba restare.
+     Così com'è, ogni nightly cancella `ollama_data` e riscarica i modelli Granite
+     al run successivo. Candidato a v0.0.2 insieme a P-9.
+  4. **P-9**: confermato per prova, pronto da formalizzare in
+     `docs/review_tecnica.md` e assegnare a v0.0.2 (come già proposto nella 6ª entry).

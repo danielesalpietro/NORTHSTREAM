@@ -146,6 +146,14 @@ grezzi in `~/NORTHSTREAM-archive/<RUN_ID>/` — mai nel repo.
   `ci-nightly` con label `[self-hosted, env-w]`, esecuzione via schedule o
   `workflow_dispatch`. Se il runner è offline, l'unica via è chiedere all'owner
   di intervenire dalla sessione locale.
+- **Sessione Claude CLI su ENV-W**: sulla Z8 è installata la Claude CLI. Per i
+  compiti che richiedono esecuzione reale (collaudo #10, run baseline #13, soak,
+  registrazione runner), l'owner attiva **su richiesta** una sessione locale
+  sulla Z8. Quella sessione si auto-assegna così: clone/aggiornamento del repo,
+  checkout del branch indicato dalla richiesta, onboarding da questo file (§1),
+  poi esecuzione della issue assegnata. Le sessioni remote non devono aspettarsi
+  di raggiungere la Z8 in altro modo: se serve ENV-W, si chiede all'owner di
+  attivare la sessione, indicando issue e branch.
 
 ## 6. Checklist di chiusura sessione (obbligatoria, in ordine)
 

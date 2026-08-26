@@ -66,6 +66,11 @@ jobs:
       - name: Run the T0 CI suite
         env:
           RUN_ID: ci-smoke-${{ github.run_id }}
+          # Tighter budgets than the workstation defaults, so the whole suite
+          # stays well inside the job timeout even when every wait is spent.
+          NS_STACK_TIMEOUT: "240"
+          NS_INDEX_TIMEOUT: "180"
+          NS_TEST_TIMEOUT: "300"
         run: bench/t0/run.sh --suite ci --env ci-smoke --report results/ci-smoke
 
       - name: Collect container logs

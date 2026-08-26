@@ -24,8 +24,8 @@ consume_log="$(mktemp)"
 # The consumer is bounded by wall clock, not by --timeout-ms: with the data
 # generator running there is always another message within a few seconds, so
 # an idle timeout would never fire and the test would hang.
-docker exec "$NS_C_KAFKA" bash -lc \
-    "timeout ${NS_CDC_TIMEOUT} kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic ${topic} 2>/dev/null" \
+docker exec "$NS_C_KAFKA" sh -c \
+    "timeout ${NS_CDC_TIMEOUT} kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic ${topic} 2>>/tmp/t0.3-consumer.err" \
     >"$consume_log" &
 consumer_pid=$!
 sleep 5
@@ -46,5 +46,7 @@ if grep -q "temperature_c" "$consume_log"; then
     ns_observe "topic carries temperature_c but not as the expected number: ${sample}"
 fi
 ns_observe "messages captured: $(wc -l <"$consume_log")"
+consumer_err="$(docker exec "$NS_C_KAFKA" sh -c 'tail -3 /tmp/t0.3-consumer.err 2>/dev/null' | tr '\n' ' ')"
+[[ -n "$consumer_err" ]] && ns_observe "consumer stderr: ${consumer_err}"
 rm -f "$consume_log"
 ns_finish "$NS_KO" "sentinel ${NS_SENTINEL_TEMP} not observed on ${topic} within ${NS_CDC_TIMEOUT}s"

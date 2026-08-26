@@ -12,8 +12,10 @@ ns_require_containers "$NS_C_KAFKA" "$NS_C_POSTGRES" "$NS_C_CONNECT" \
 start="$(ns_now)"
 deadline=$((start + NS_STACK_TIMEOUT))
 
+# Plain `sh -c`, exactly like the compose healthcheck: a login shell would
+# reset PATH and lose the Kafka bin directory of the image.
 probe_kafka() {
-    docker exec "$NS_C_KAFKA" bash -lc \
+    docker exec "$NS_C_KAFKA" sh -c \
         'kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1 || kafka-topics --bootstrap-server kafka:9092 --list >/dev/null 2>&1'
 }
 probe_postgres() { docker exec "$NS_C_POSTGRES" pg_isready -U demo -d sales >/dev/null 2>&1; }

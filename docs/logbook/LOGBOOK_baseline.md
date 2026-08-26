@@ -78,3 +78,105 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
 - **Decisioni richieste all'owner**: abilitare l'auto-add del Project (o
   aggiungere manualmente #3–#38 al board) e, se gradito, configurare le colonne
   per fase.
+
+## 2026-08-26 (3ª entry) — sessione remota (ENV: nessuno — niente demone Docker) — Claude Code, sessione operativa Fase 0
+
+- **Obiettivo della sessione**: eseguire le sub-issue #9, #11, #12, #14 della
+  Fase 0: tag baseline e apertura di `release/v0.0.1`, harness `bench/t0/`,
+  workflow CI, fix documentali O2.
+- **Vincolo d'ambiente dichiarato** (CLAUDE.md §5): questa sessione **non ha un
+  demone Docker** (`docker info` → `dial unix /var/run/docker.sock: no such
+  file`). Il CLI `docker` c'è, quindi `docker compose config` è eseguibile, ma
+  nessun container può essere avviato in locale. Tutto ciò che richiede lo stack
+  acceso è stato verificato **sulla CI GitHub-hosted**, non dichiarato a memoria.
+- **Fatto** (branch `release/v0.0.1`, creato da `develop@5eb456a`):
+  - Tag annotato `v0.0.0-baseline` su `5eb456a` creato in locale. **Il push del
+    tag è stato rifiutato**: `HTTP 403` dal proxy git della sessione remota, a
+    fronte di push di branch che invece funzionano. Riprovato due volte, stesso
+    esito → è una restrizione dell'ambiente, non un errore transitorio.
+    **Decisione richiesta all'owner**, sotto.
+  - `0067d37` — merge di `claude/project-plan-review-473nje` in `release/v0.0.1`
+    (review, piano, CLAUDE.md, CHANGELOG, logbook: sola documentazione).
+  - `b7c13ed` — harness `bench/t0/` (#11): 12 test script indipendenti
+    dall'ordine, `run.sh --suite ci|static|core|full`, valori sentinella fissi
+    (77.31, 91.73, Depot-9/93.17), JSON per test, `manifest.json` + `summary.md`
+    per run, attese in `expected/baseline.json` e `expected/current.json`,
+    semantica PASS/XFAIL/FAIL/XPASS/SKIP. Il linter T0.12
+    (`lib/doc_truth.py`) è anche standalone. `bench/ci/mock-ollama` sostituisce
+    Ollama con uno stub deterministico (embedding da hash, echo del contesto).
+  - `977dc63` — workflow `ci-static`, `ci-smoke`, `ci-nightly` (#12).
+  - `531aa47` — fix documentali O2 (#14): storyline accorciata + tabella
+    "Layer status", endpoint `localhost:9092` rimosso dalla tabella servizi,
+    layout allineato al reale, License = MIT, doppio header Granite, placeholder
+    di clone, sezione "How the retrieval really works" nel demo-script,
+    `.env` → `.env.example` + `.gitignore`.
+  - `5762546` — fix di due difetti del harness trovati dal primo run reale di
+    ci-smoke (v. "Test eseguiti").
+- **Decisioni prese**:
+  - **T0.12 più severo di quanto scritto nel piano**: oltre ai tre controlli
+    (a) layout, (b) endpoint, (c) License, il linter verifica anche gli header
+    di tabella duplicati e i placeholder residui. Motivo: il piano chiede che
+    ogni fix abbia un test di riscontro, e i due difetti puntuali di D-2 non ne
+    avrebbero avuto uno. Documentato in `bench/README.md`.
+  - **Endpoint Kafka: rimosso, non corretto.** In tabella servizi resta
+    `kafka:9092` (in-network) con una nota che spiega perché l'host non lo usa.
+    Il doppio listener è di v0.0.2 (O3.1): anticiparlo qui avrebbe cambiato il
+    comportamento del sistema in una release che deve solo misurarlo.
+  - **Servizi CI elencati per nome invece dei profili compose.** Lo scheletro
+    del piano (§5) usa `--profile core`, ma i profili arrivano in v0.0.3:
+    elencare i servizi nel workflow ottiene lo stesso risultato senza toccare i
+    compose file in questa release.
+  - **`expected/` diviso in due file** (`baseline.json`, `current.json`): le
+    attese non sono una proprietà del harness ma del target misurato. Un run
+    contro il tag baseline usa `baseline.json`; il branch di release usa
+    `current.json`, che differisce solo per T0.12 (il progression test dichiarato).
+  - **`ci-nightly` dormiente**: `if: vars.RUN_NIGHTLY == 'true' || dispatch`.
+    Senza il runner self-hosted lo schedule accumulerebbe run che nessuno può
+    servire. Si accende registrando il runner e la variabile.
+  - **`demo-script.md` resta in inglese** benché stia in `docs/`: è
+    documentazione d'uso pubblica, già in inglese, e mescolare le lingue dentro
+    un documento presentato al cliente sarebbe peggio della regola violata.
+- **Test eseguiti**:
+  - `bench/t0/run.sh --suite static --expected expected/baseline.json`
+    (locale, senza Docker) → **T0.1 PASS** (3/3 combinazioni compose valide),
+    **T0.12 XFAIL** (12 violazioni: 8 path inesistenti, endpoint 9092, License,
+    header duplicato, placeholder). È la misura della baseline documentale.
+  - `bench/t0/run.sh --suite static` (dopo i fix #14) → **T0.1 PASS,
+    T0.12 PASS**: il progression test dichiarato per v0.0.1 è flippato.
+  - `docker compose config` prima/dopo la pulizia degli spazi nel compose e
+    prima/dopo la rimozione di `.env` dal tracking → **output byte-identico**
+    in entrambi i casi: nessun cambio di comportamento runtime in v0.0.1.
+  - Stub mock-ollama avviato in locale con python → vettori 384-dim
+    deterministici e normalizzati, `/api/generate` che restituisce il contesto.
+  - **CI**: `ci-static` **verde** al secondo run (il primo era rosso *solo* sullo
+    step T0.12, prima dei fix documentali: tutti i lint passavano già).
+    `ci-smoke`: primo run reale **appeso** su T0.3 → difetto del harness, non del
+    sistema (vedi sotto).
+- **Non funziona / sospeso**:
+  - **Difetto del harness trovato e corretto** (`5762546`): T0.3 usava
+    `kafka-console-consumer --timeout-ms`, che scade solo dopo N ms *senza
+    messaggi*; col generatore che inserisce ogni 3 s un messaggio arriva sempre,
+    quindi il consumer non usciva mai. Ora il consumer è limitato dall'orologio
+    e ogni test gira sotto `timeout` (`NS_TEST_TIMEOUT`, default 600 s): un test
+    bloccato diventa un KO con durata registrata, non un job che muore al limite
+    della CI.
+  - Tag `v0.0.0-baseline` **non pubblicato** (403, v. sopra).
+  - Suite T0 completa con modelli reali: **mai eseguita** — richiede ENV-L/ENV-W
+    (issue #13). Nessun esito di T0.5, T0.6, T0.7, T0.9, T0.10 è stato osservato:
+    le attese in `expected/` restano dichiarazioni del piano, non misure.
+  - `docs/runs/` conterrà il primo report vero solo dopo il run baseline (#13).
+- **Prossimo passo per la sessione successiva**: su ENV-L o ENV-W eseguire
+  `bench/t0/run.sh --suite full --repo <checkout del tag baseline> --expected
+  bench/t0/expected/baseline.json --env envl` e committare
+  `docs/runs/<RUN_ID>-baseline.md` (issue #13); poi #15 per il tag `v0.0.1`.
+- **Decisioni richieste all'owner**:
+  1. **Push del tag `v0.0.0-baseline`** (issue #9): la sessione remota riceve
+     `HTTP 403` sui push di tag. Il tag esiste solo in locale qui, quindi va
+     ricreato e pushato dall'owner:
+     `git tag -a v0.0.0-baseline 5eb456a -m "..." && git push origin v0.0.0-baseline`.
+     Finché non è pubblicato, il punto di riferimento del piano non esiste per
+     chiunque non sia questa macchina.
+  2. **Runner self-hosted su ENV-W** + variabile di repository `RUN_NIGHTLY=true`
+     per attivare `ci-nightly` (issue #12).
+  3. Conferma che `release/v0.0.1` resti aperto fino al run baseline (#13):
+     questa sessione **non** ha taggato v0.0.1, come da scope.

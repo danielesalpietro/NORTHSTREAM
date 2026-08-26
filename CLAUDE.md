@@ -27,12 +27,13 @@ Leggere **in quest'ordine**, sempre:
    release corrente (v. §2) definisce lo scope ammesso della sessione.
 3. **`docs/review_tecnica.md`** — i finding (P-*, A-*, G-*, D-*) che il piano
    chiude. Ogni intervento cita il finding che sta chiudendo.
-4. **`docs/logbook/LOGBOOK_<fase-corrente>.md`** — che cosa hanno fatto, deciso e
-   lasciato in sospeso le sessioni precedenti di questa fase. **Ultima entry = punto
-   di ripartenza.** Se esiste `docs/logbook/SINTESI_fasi_chiuse.md`, leggerlo
-   prima: è la memoria distillata delle fasi già chiuse (§8). I logbook integrali
-   in `docs/logbook/archive/` **non** vanno letti in onboarding — si aprono solo
-   quando serve ricostruire un dettaglio che la sintesi non copre.
+4. **`docs/logbook/LOGBOOK_<fase-corrente>.md`** — leggere la **SINTESI DI FASE**
+   in testa al file e **l'ultima entry**, non tutte le entry: la testa è la forma
+   compressa della fase, l'ultima entry è il punto di ripartenza. Le entry
+   intermedie si aprono solo per ricostruire un dettaglio che la testa non copre.
+   Se esiste `docs/logbook/SINTESI_fasi_chiuse.md`, leggerlo prima: è la memoria
+   distillata delle fasi già chiuse (§8). I logbook integrali in
+   `docs/logbook/archive/` **non** si leggono in onboarding.
 5. **`CHANGELOG.md`** — sezione `[Unreleased]`: cosa è già cambiato ma non rilasciato.
 6. **`docs/runs/`** — l'ultimo report di test: è lo stato *misurato* del sistema
    (PASS/XFAIL/FAIL). Se contraddice un documento, comanda il report.
@@ -96,8 +97,18 @@ Tre documenti hanno cadenze di aggiornamento **obbligatorie**:
 
 ### `LOGBOOK_<fase>.md` (in `docs/logbook/`) — ogni sessione, sempre
 Un file per fase del release train: `LOGBOOK_baseline.md`, `LOGBOOK_v0.0.1.md`,
-`LOGBOOK_v0.0.2.md`, … Ogni sessione di lavoro **apre** leggendo l'ultima entry e
-**chiude** appendendone una nuova con questo template:
+`LOGBOOK_v0.0.2.md`, … Ogni file ha **due livelli**:
+
+- una **SINTESI DI FASE** in testa — l'unica parte che si riscrive, aggiornata da
+  ogni sessione alla chiusura. Contiene: dove siamo, le decisioni prese col loro
+  perché, i numeri misurati, cosa è aperto, il prossimo passo. È ciò che legge
+  una sessione nuova, e alla chiusura della fase **diventa** l'ESITO FASE (§8):
+  mantenerla viva rende la compressione finale quasi gratuita, invece di un
+  lavoro da fare sotto pressione a fine fase;
+- le **entry**, append-only, che non si riscrivono mai.
+
+Ogni sessione **apre** leggendo testa + ultima entry, e **chiude** appendendo una
+nuova entry con questo template *e* aggiornando la testa:
 
 ```markdown
 ## AAAA-MM-GG — <ambiente: ENV-L/W/R o remoto> — <autore/sessione>
@@ -190,7 +201,8 @@ grezzi in `~/NORTHSTREAM-archive/<RUN_ID>/` — mai nel repo.
 
 1. Lavoro committato con messaggi che citano finding/obiettivo (niente lavoro solo
    nel working tree a fine sessione).
-2. Entry nel logbook di fase (template §4).
+2. Entry nel logbook di fase **e aggiornamento della SINTESI DI FASE** in testa
+   al file (template e regole §4): la testa è ciò che leggerà la sessione nuova.
 3. `CHANGELOG.md` aggiornato se è cambiato comportamento.
 4. Tabella "Stato corrente" (§2 di questo file) aggiornata: fase, ultimo run,
    prossima azione, blocchi.
@@ -266,9 +278,11 @@ un "prossimo passo" già eseguito); la duplicazione dello stesso fatto tra §2,
 logbook e CHANGELOG; le minuzie di coordinamento fra sessioni, una volta che la
 fase è chiusa.
 
-**Quando**: obbligatoriamente alla chiusura di ogni fase (tag) — il logbook della
-fase si distilla in una sezione di `docs/logbook/SINTESI_fasi_chiuse.md` (una
-pagina per fase, non di più) e l'originale va in `archive/`. Fuori dalle
+**Quando**: obbligatoriamente alla chiusura di ogni fase (tag). Il lavoro è quasi
+già fatto, perché la **SINTESI DI FASE** in testa al logbook (§4) è mantenuta
+viva da ogni sessione: alla chiusura si congela come ESITO FASE, si copia in
+`docs/logbook/SINTESI_fasi_chiuse.md` (una pagina per fase, non di più) e
+l'originale integrale va in `archive/`. Fuori dalle
 chiusure, quando il percorso di onboarding supera **40.000 token**.
 
 **Verifica** (vale la regola §3.1: nessun "fatto" senza riscontro): la sintesi è

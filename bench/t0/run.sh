@@ -141,7 +141,12 @@ collect_environment() {
             digest="$(docker inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$image" 2>/dev/null || true)"
             images+="${name}"$'\t'"${image}"$'\t'"${id}"$'\t'"${digest}"$'\n'
         done < <(docker ps --filter 'name=northstream-' --format '{{.Names}}\t{{.Image}}' 2>/dev/null)
-        models="$(docker exec northstream-ollama ollama list 2>/dev/null || true)"
+        # Exit status, not output: a failed exec (the CI mock has no ollama
+        # binary) must record "no models observed", never its own error text
+        # dressed up as a model.
+        if ! models="$(docker exec northstream-ollama ollama list 2>/dev/null)"; then
+            models=""
+        fi
     fi
     NS_ENV_IMAGES="$images" NS_ENV_MODELS="$models" python3 -c '
 import json, os, sys

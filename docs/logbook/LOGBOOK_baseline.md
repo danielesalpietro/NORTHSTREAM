@@ -9,12 +9,13 @@ forma compressa della fase, e alla chiusura diventa l'ESITO FASE.
 
 ---
 
-## SINTESI DI FASE — aggiornata al 2026-08-26, 21:10 UTC
+## SINTESI DI FASE — aggiornata al 2026-08-26, 21:45 UTC
 
-**Dove siamo**: Fase 0 quasi chiusa. Tag `v0.0.0-baseline` → `5eb456a` pubblicato.
-Su `release/v0.0.1`: harness `bench/t0/` (12 test), tre workflow CI, fix
-documentali. Restano #10 (collaudo in macchina) e #13 (run T0 con LLM veri) sulla
-Z8, poi #15 (tag `v0.0.1`, azione dell'owner).
+**Dove siamo**: Fase 0 completa sul piano tecnico. Tag `v0.0.0-baseline` → `5eb456a`
+pubblicato. Su `release/v0.0.1`: harness `bench/t0/` (12 test), tre workflow CI
+(`ci-static` e `ci-smoke` **verdi**), fix documentali (T0.12 flippato), collaudo in
+macchina e **run T0 di riferimento archiviato**. Resta solo #15: il tag `v0.0.1`,
+azione dell'owner.
 
 **Decisioni prese, con il perché**
 - **Storyline README accorciata, non costruita**: i layer non collegati (Flink,
@@ -34,27 +35,39 @@ Z8, poi #15 (tag `v0.0.1`, azione dell'owner).
 - **Le sessioni bridge (CLI locale) si raggiungono solo** via `create_trigger`
   con `persistent_session_id` + `fire_trigger`; non espongono `usage`.
 - **P-5 (tier RAM) non è verificabile su ENV-W**: con 256 GB fisici le JVM
-  auto-dimensionano l'heap, quindi i numeri sono un limite superiore non
-  trasferibile. Serve ENV-L o `mem_limit` espliciti.
+  auto-dimensionano l'heap e i pesi dei modelli stanno in VRAM. Serve ENV-L o
+  `mem_limit` espliciti (v0.0.3, T-PROF).
+- **Le attese di `expected/baseline.json` non si piegano ai risultati**: l'XPASS
+  di T0.10 non è stato promosso a PASS, perché avrebbe cristallizzato nel metro
+  di riferimento una proprietà che il run non dimostra.
+- **`NS_RECENCY_SECONDS` = 300 di default** e tetto per-test derivato dai
+  parametri del test: un test che coi soli default non può finire è un test che
+  non flipperà mai da solo.
 
 **Numeri misurati**
-- Run verde `ci-smoke-33008193653`: 4 PASS + 2 XFAIL, zero FAIL.
-- **A-3 e A-5 confermati per misura** (erano deduzioni statiche della review).
-- **A-8 scoperto per misura**: l'agent resta cieco ai topic CDC per 4 min 46 s
+- **Run di riferimento** `20260826-2053-envw-5eb456a` (ENV-W, modelli reali,
+  suite `full` contro il tag): **5 PASS + 6 XFAIL + 1 XPASS**, `RESULT: OK`. È il
+  metro di ogni release successiva.
+- **P-1, P-2, A-2, A-3, A-5 confermati per misura**; **D-1/D-2/P-1 doc** chiusi da
+  T0.12 (XFAIL → PASS, il progression test dichiarato per v0.0.1).
+- **A-8 scoperto per misura**: agent cieco ai topic CDC per **4 min 46 s**
   seguendo l'ordine documentato. Non era nella review. Issue #39, fix in v0.0.4.
-- **T0.12 XFAIL → PASS**: è il progression test dichiarato per v0.0.1.
-- Costo del processo finora: 81,6 M token letti da cache contro 310 mila
-  generati (263:1), ~$103,81 nozionali. Il costo è rilettura, non generazione.
-- Percorso di onboarding: 101 KB, ~28.800 token.
+- **XPASS di T0.10 spiegato**: con 61 punti in collection e `top_k=5` il match
+  letterale entra comunque; il test dipende dalla dimensione del corpus → issue
+  #40, da rafforzare prima che il suo esito significhi qualcosa.
+- RSS totale dello stack full su ENV-W: **9,52 GiB** (non è una verifica di P-5).
+- Costo del processo: ~81,6 M token letti da cache contro ~310 mila generati
+  (263:1). Il costo è rilettura, non generazione.
 
 **Aperto**
-- #10 e #13 in corso sulla Z8; #15 (tag `v0.0.1`) attende l'owner.
-- RP-0 (probe DinD su RunPod) non eseguito.
-- Runner self-hosted `env-w` e variabile `RUN_NIGHTLY` da configurare.
-- Limite settimanale `claude-fable-5` esaurito fino al ~28/08.
+- #15 (tag `v0.0.1`) — unica azione mancante, spetta all'owner.
+- ENV-W non può pubblicare su GitHub (nessuna credenziale): i suoi commit li
+  pubblica l'owner.
+- #40 (T0.10 fragile), P-9 (script non eseguibili su clone pulito), RP-0,
+  runner self-hosted `env-w` + `RUN_NIGHTLY`.
 
-**Prossimo passo**: alla consegna della Z8, verificare il gate di v0.0.1 e
-chiedere all'owner il tag.
+**Prossimo passo**: l'owner appone il tag `v0.0.1`; poi si apre la Fase 1 (v0.0.2)
+con i progression test T0.6 (doppio listener Kafka) come primo obiettivo.
 
 ---
 
@@ -653,3 +666,67 @@ chiedere all'owner il tag.
   verificare il gate di v0.0.1 e chiedere all'owner il tag.
 - **Decisioni richieste all'owner**: nessuna nuova. Restano aperte: registrazione
   del runner self-hosted `env-w` e tag `v0.0.1` quando il gate è verde.
+
+## 2026-08-26 (8ª entry) — sessione remota (nessun demone Docker) — Claude Code, sessione operativa Fase 0
+
+- **Obiettivo della sessione**: chiudere le due lacune del harness (#11) trovate
+  dal run di riferimento ENV-W, richieste dalla supervisione prima del tag v0.0.1.
+- **Fatto** (branch `release/v0.0.1`):
+  - `dfcc90c` — merge delle nuove regole da `claude/project-plan-review-473nje`
+    (SINTESI DI FASE, compressione della memoria, costo di processo, policy
+    modelli, tmux su ENV-W). Conflitto sul logbook risolto tenendo **tutte** le
+    entry: le 5ª e 6ª (ENV-W) sono citate per numero nella tabella §2 di
+    `CLAUDE.md`, quindi non rinumerabili; quella della supervisione è diventata 7ª.
+  - `c304694` + fix successivo — le due lacune:
+    1. **Archiviazione §3 ora automatica**: ogni run scrive `SHA256SUMS` (e lo
+       verifica subito) e il `manifest.json` porta la sezione `stack` con image id
+       e digest dei container `northstream-*` più i modelli Ollama. Senza demone
+       Docker la sezione resta **vuota invece di sparire**: "niente osservato" è
+       un'informazione, l'omissione silenziosa no.
+    2. **Default coerenti su T0.9**: `NS_RECENCY_SECONDS` passa a 300 e il tetto
+       del singolo test si deriva dai parametri del test stesso
+       (`NS_RECENCY_SECONDS + 300`). Chi vuole l'asserzione forte passa 900 e
+       ottiene 1200 s senza toccare altro — prima 900 contro un tetto di 600
+       significava che T0.9 **non poteva finire**, quindi non avrebbe mai potuto
+       flippare in v0.0.4.
+- **Decisioni prese**:
+  - **`NS_RECENCY_SECONDS` = 300, non 900.** L'asserzione è più debole (il
+    contesto conserva eventi più vecchi di 5 minuti invece di 15) ma regge coi
+    soli default, che è la proprietà che serve a un test destinato a flippare da
+    solo in CI. Documentato in `bench/README.md` insieme al modo per rinforzarla.
+  - **Verifica del percorso Docker delegata a ci-smoke.** Questa sessione non ha
+    un demone Docker, quindi `collect_environment` era testabile solo nel ramo
+    "nessun container". Ho aggiunto a ci-smoke uno step che stampa ciò che il
+    manifest ha registrato ed esegue `sha256sum -c`: l'unico ambiente con
+    container vivi è l'unico che può dimostrare quel codice.
+  - **Log dei container spostati fuori dalla cartella del report** (`results/
+    ci-smoke-logs/`): venivano raccolti *dopo* la generazione di `SHA256SUMS`, e
+    un archivio che contiene file non elencati nei propri checksum è meno
+    verificabile di quanto sembri.
+  - **Non toccati**: `expected/baseline.json` (la Z8 ha fatto bene a lasciare
+    T0.10 XFAIL) e T0.10 stesso, la cui debolezza è la issue #40 in Fase 3.
+- **Test eseguiti**:
+  - `bench/t0/run.sh --suite static` → T0.1 PASS, T0.12 PASS; `SHA256SUMS` di 7
+    file generato e verificato in modo indipendente (`sha256sum -c` → 7/7 OK);
+    `manifest.json` con la chiave `stack`.
+  - `test_timeout_for` con `NS_RECENCY_SECONDS=900` → **1200 s** per T0.9 e 600 s
+    per gli altri; coi default → 600 s.
+  - **ci-smoke run `33015781417` verde** su `c304694`: **7 immagini registrate**
+    con id (stream-agent, debezium/connect:2.7.3.Final, data-generator,
+    bitnamilegacy/kafka:3.7.1, qdrant/qdrant:latest, postgres:16,
+    northstream/mock-ollama:ci) e `checksums verify`. Il percorso Docker è
+    dimostrato, non supposto.
+- **Non funziona / sospeso**:
+  - **Difetto mio, trovato dal run CI e corretto subito**: catturavo l'output di
+    `docker exec ... ollama list` senza guardare l'exit status, così sul mock (che
+    non ha il binario `ollama`) il messaggio `OCI runtime exec failed ...` è
+    finito **dentro** la lista dei modelli del manifest. Un manifest che registra
+    un errore come se fosse un modello è precisamente il tipo di falso che questo
+    lavoro serve a evitare. Ora conta l'exit status: exec fallito → nessun modello
+    osservato.
+  - Restano fuori dal mio scope e aperti: XPASS di T0.10 (#40), P-9 sugli script
+    non eseguibili, runner self-hosted + `RUN_NIGHTLY`, RP-0.
+- **Prossimo passo per la sessione successiva**: il gate di v0.0.1 è verde
+  (ci-static + ci-smoke, run di riferimento archiviato, T0.12 flippato). Resta
+  solo il tag `v0.0.1` (#15), che appone l'owner.
+- **Decisioni richieste all'owner**: nessuna nuova da parte mia.

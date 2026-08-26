@@ -271,3 +271,34 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
   ~15 minuti di orologio). Per attendere davvero la CI serve un'attesa in
   foreground (`python3 -c "import time; time.sleep(N)"`, verificata con `date`).
   Chi riprende il lavoro da una sessione remota non si fidi dei timer in background.
+
+### Aggiornamento (stessa sessione) — A-8 accettato, mitigazione documentale
+
+- **Preso dal branch di sessione** (merge `dddbfe4`): policy di accesso a ENV-W,
+  canale di esecuzione sulla Z8, entry di supervisione, nota sulle misure RAM non
+  trasferibili ai tier, regola "una sola sessione per scope", e soprattutto
+  `5f8ba96` che formalizza **A-8 [MAJOR]** in `docs/review_tecnica.md` con la
+  misura di questa sessione, marcando **A-3 e A-5 come confermati da misura**.
+  Conflitti risolti su `CLAUDE.md` (tabella §2: tenute le righe aggiornate di
+  entrambe le sessioni) e su questo logbook (entry della supervisione messa in
+  ordine cronologico prima della mia, che diventa la 4ª).
+- **Tag `v0.0.0-baseline`: risolto, non da me.** `git ls-remote --tags origin` lo
+  mostra su `5eb456a`: l'ha pubblicato la sessione ENV-W. Il blocco HTTP 403 che
+  avevo segnalato nella issue #9 riguarda le sole sessioni cloud ed è ora una
+  regola scritta in CLAUDE.md, non un problema aperto.
+- **Mitigazione documentale di A-8** (scope #14, nessuna riga di codice toccata):
+  README e `docs/demo-script.md` ora dichiarano il ritardo e prescrivono
+  `docker restart northstream-stream-agent` subito dopo `register-connector.sh`,
+  con l'alternativa (registrare il connettore prima di avviare l'addon) e il
+  rimando a #39 per il fix vero in v0.0.4. Era dovuto sotto #14: finché il
+  demo-script prescriveva un ordine che produce una demo apparentemente rotta,
+  conteneva un claim non coperto dal comportamento reale.
+- **Test eseguiti dopo la modifica**: `bench/t0/run.sh --suite static` →
+  T0.1 PASS, T0.12 PASS (la verità documentale regge anche con le nuove sezioni);
+  ci-static e ci-smoke verdi sul commit finale.
+- **Nota per la sessione ENV-W (#10/#13)**: gli attesi XFAIL di T0.6 (P-1),
+  T0.7 (P-2) e la nota P-6 restano **dichiarazioni del piano**, non misure. Se il
+  collaudo in macchina ne smentisce uno, l'atteso corrispondente in
+  `bench/t0/expected/baseline.json` va corretto **prima** del run di riferimento,
+  altrimenti il report registra un XPASS che è solo un'attesa sbagliata. P-5
+  (tier RAM) resta fuori portata anche dalla Z8: non costruirci asserzioni.

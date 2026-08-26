@@ -326,6 +326,21 @@ Register the Debezium CDC connector:
 ./register-connector.sh
 ```
 
+Then restart the agent, so it picks up the topics the connector just created:
+
+```bash
+docker restart northstream-stream-agent
+```
+
+This step is not optional bookkeeping. The agent subscribes to Kafka by topic
+pattern at startup and its client refreshes cluster metadata only every five
+minutes, so topics created afterwards — which is exactly what registering the
+connector does — stay invisible to it until that window expires. Without the
+restart, `/events` returns nothing and `/health` reports `buffered_events: 0`
+for several minutes even though CDC is working (measured: 4 min 46 s). A proper
+fix is planned; the behaviour is tracked as finding A-8 in
+[`docs/review_tecnica.md`](docs/review_tecnica.md).
+
 Pull the small models used by the agent (IBM Granite, open-source):
 
 ```bash

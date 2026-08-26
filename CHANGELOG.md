@@ -56,6 +56,11 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
   (D-2); rimosso il placeholder `<your-repository-url>` dal Quick Start.
 - README: "Demo Narrative" riscritta senza i passaggi (Flink, lakehouse, Trino,
   OpenMetadata) che la pipeline non esegue (D-1).
+- README e `docs/demo-script.md`: dichiarato il ritardo di scoperta dei topic
+  dell'agent (finding **A-8**, misurato in CI a 4 min 46 s) con il workaround
+  `docker restart northstream-stream-agent` subito dopo la registrazione del
+  connettore. Mitigazione **solo documentale**: il fix strutturale è in v0.0.4
+  ([#39](https://github.com/danielesalpietro/NORTHSTREAM/issues/39), test T0.13).
 - `docs/demo-script.md`: nuova sezione "How the retrieval really works" che
   dichiara il boost keyword su `KNOWN_SITES`, i suoi limiti sui siti fuori lista
   e la sostituzione prevista in v0.0.4, più la nota sul trade-off

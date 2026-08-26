@@ -53,6 +53,27 @@ sets `decimal.handling.mode: double` so `NUMERIC` columns
 (`temperature_c`, `vibration_g`, `unit_price`, `total_amount`) stream as
 plain numbers instead of base64-encoded bytes.
 
+> **Restart the agent right after this step — otherwise the demo looks broken
+> for about five minutes.**
+>
+> ```bash
+> docker restart northstream-stream-agent
+> ```
+>
+> The agent subscribes to Kafka *by topic pattern* when it starts, and its
+> client refreshes cluster metadata only every 5 minutes. The CDC topics are
+> created by the step you just ran — that is, after the agent subscribed — so
+> until that window expires the agent does not know they exist: `/events` stays
+> empty and `/health` keeps reporting `buffered_events: 0` while the pipeline is
+> in fact working. Measured in CI: **4 minutes and 46 seconds** between
+> registering the connector and the first event reaching the agent.
+>
+> Restarting the agent makes it discover the topics immediately. The
+> alternative is to register the connector *before* starting the addon. This is
+> finding A-8 in [`review_tecnica.md`](review_tecnica.md); the real fix (a short
+> metadata refresh interval) lands in v0.0.4 — see
+> [issue #39](https://github.com/danielesalpietro/NORTHSTREAM/issues/39).
+
 ## 3. Pull the Ollama models (small, on purpose)
 
 IBM Granite, open-source and aligned with the watsonx narrative:

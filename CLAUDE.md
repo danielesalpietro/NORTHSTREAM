@@ -27,9 +27,13 @@ Leggere **in quest'ordine**, sempre:
    release corrente (v. §2) definisce lo scope ammesso della sessione.
 3. **`docs/review_tecnica.md`** — i finding (P-*, A-*, G-*, D-*) che il piano
    chiude. Ogni intervento cita il finding che sta chiudendo.
-4. **`docs/logbook/LOGBOOK_<fase-corrente>.md`** — che cosa hanno fatto, deciso e
-   lasciato in sospeso le sessioni precedenti di questa fase. **Ultima entry = punto
-   di ripartenza.**
+4. **`docs/logbook/LOGBOOK_<fase-corrente>.md`** — leggere la **SINTESI DI FASE**
+   in testa al file e **l'ultima entry**, non tutte le entry: la testa è la forma
+   compressa della fase, l'ultima entry è il punto di ripartenza. Le entry
+   intermedie si aprono solo per ricostruire un dettaglio che la testa non copre.
+   Se esiste `docs/logbook/SINTESI_fasi_chiuse.md`, leggerlo prima: è la memoria
+   distillata delle fasi già chiuse (§8). I logbook integrali in
+   `docs/logbook/archive/` **non** si leggono in onboarding.
 5. **`CHANGELOG.md`** — sezione `[Unreleased]`: cosa è già cambiato ma non rilasciato.
 6. **`docs/runs/`** — l'ultimo report di test: è lo stato *misurato* del sistema
    (PASS/XFAIL/FAIL). Se contraddice un documento, comanda il report.
@@ -93,8 +97,18 @@ Tre documenti hanno cadenze di aggiornamento **obbligatorie**:
 
 ### `LOGBOOK_<fase>.md` (in `docs/logbook/`) — ogni sessione, sempre
 Un file per fase del release train: `LOGBOOK_baseline.md`, `LOGBOOK_v0.0.1.md`,
-`LOGBOOK_v0.0.2.md`, … Ogni sessione di lavoro **apre** leggendo l'ultima entry e
-**chiude** appendendone una nuova con questo template:
+`LOGBOOK_v0.0.2.md`, … Ogni file ha **due livelli**:
+
+- una **SINTESI DI FASE** in testa — l'unica parte che si riscrive, aggiornata da
+  ogni sessione alla chiusura. Contiene: dove siamo, le decisioni prese col loro
+  perché, i numeri misurati, cosa è aperto, il prossimo passo. È ciò che legge
+  una sessione nuova, e alla chiusura della fase **diventa** l'ESITO FASE (§8):
+  mantenerla viva rende la compressione finale quasi gratuita, invece di un
+  lavoro da fare sotto pressione a fine fase;
+- le **entry**, append-only, che non si riscrivono mai.
+
+Ogni sessione **apre** leggendo testa + ultima entry, e **chiude** appendendo una
+nuova entry con questo template *e* aggiornando la testa:
 
 ```markdown
 ## AAAA-MM-GG — <ambiente: ENV-L/W/R o remoto> — <autore/sessione>
@@ -102,9 +116,18 @@ Un file per fase del release train: `LOGBOOK_baseline.md`, `LOGBOOK_v0.0.1.md`,
 - **Fatto**: (con SHA dei commit)
 - **Decisioni prese**: (e perché — le alternative scartate valgono quanto le scelte)
 - **Test eseguiti**: comando → esito (PASS/FAIL/XFAIL), o "nessuno" — esplicito
+- **Costo della sessione**: modello, durata, token (cache read / output), costo
+  nozionale — da `get_session`. Per le sessioni **bridge** (Claude CLI locale)
+  il campo `usage` non è esposto: scrivere "non misurabile", mai stimare.
 - **Non funziona / sospeso**:
 - **Prossimo passo per la sessione successiva**: (una riga azionabile, non un tema)
 ```
+
+Il campo **Costo della sessione** serve a misurare lo sforzo del processo, non
+solo il prodotto: con l'abbonamento MAX il denaro è nozionale, ma i token
+consumati sono il proxy diretto del budget di rate limit, ed è l'unico modo per
+capire a posteriori quali tipi di lavoro sono cari e perché (v. §7). Prima
+misurazione e lezioni ricavate: entry del 26/08/2026 in `LOGBOOK_baseline.md`.
 
 Il logbook non si riscrive mai: solo append. È la memoria lunga del progetto.
 Quando una fase si chiude (tag), il logbook della fase si chiude con una entry
@@ -165,12 +188,21 @@ grezzi in `~/NORTHSTREAM-archive/<RUN_ID>/` — mai nel repo.
   poi esecuzione della issue assegnata. Le sessioni remote non devono aspettarsi
   di raggiungere la Z8 in altro modo: se serve ENV-W, si chiede all'owner di
   attivare la sessione, indicando issue e branch.
+  **Avviarla sempre dentro `tmux` (o `screen`)**: se la CLI gira direttamente in
+  una sessione SSH, un timeout della connessione uccide la sessione a metà
+  lavoro — è già successo durante un deploy, costando il riavvio da capo.
+  Con `tmux new -s northstream` la sessione sopravvive alla caduta e si
+  riprende con `tmux attach -t northstream`. Una sessione ENV-W che riprende
+  dopo una caduta **non riparte da zero**: verifica prima lo stato reale
+  (`docker compose ps`, `docker images`, `ollama list`, `git log`) e riprende
+  dal primo passo mancante.
 
 ## 6. Checklist di chiusura sessione (obbligatoria, in ordine)
 
 1. Lavoro committato con messaggi che citano finding/obiettivo (niente lavoro solo
    nel working tree a fine sessione).
-2. Entry nel logbook di fase (template §4).
+2. Entry nel logbook di fase **e aggiornamento della SINTESI DI FASE** in testa
+   al file (template e regole §4): la testa è ciò che leggerà la sessione nuova.
 3. `CHANGELOG.md` aggiornato se è cambiato comportamento.
 4. Tabella "Stato corrente" (§2 di questo file) aggiornata: fase, ultimo run,
    prossima azione, blocchi.
@@ -185,7 +217,89 @@ sessione successiva cieca: se riprendi un lavoro senza entry di chiusura, la pri
 azione è ricostruire lo stato dai commit e scrivere tu l'entry mancante, marcata
 "(ricostruita a posteriori)".
 
-## 7. Riferimenti rapidi
+## 7. Scelta del modello ed economia dei token
+
+L'owner ha delegato alla supervisione la scelta del modello per ogni sessione
+operativa (26/08/2026). L'owner ha un abbonamento **MAX**: i token non si pagano
+a consumo, quindi **la valuta scarsa non è il denaro, sono i rate limit** —
+finestra a 5 ore e limite settimanale per modello. Quando si esauriscono, il
+lavoro si ferma e si aspetta: il limite settimanale su `claude-fable-5` è già
+stato bruciato una volta, bloccando una sessione operativa per circa due giorni.
+
+Criterio, quindi: **il modello più leggero che non thrasha**. Non per risparmiare
+denaro, ma per non restare senza capacità nel momento sbagliato — e perché una
+sessione che gira a vuoto consuma più budget di un modello capace che risolve al
+primo colpo.
+
+| Tipo di lavoro | Modello | Dove |
+|---|---|---|
+| Configurazione meccanica, già specificata dal piano, verificabile in CI | `claude-sonnet-5` | Fase 1 (listener Kafka, pin immagini, binding, preflight), Fase 2 (profiles, `mem_limit`, catalogo Trino) |
+| Progettazione su codice delicato, con gate di qualità da interpretare | `claude-opus-5` | Fase 3 (retrieval, point-id, recency, `/health`), Fase 5 (lettura della matrice EVAL, decisioni di release) |
+| Integrazione fiddly con prodotto poco conosciuto | `claude-sonnet-5`, escalation a `claude-opus-5` se si blocca due volte sullo stesso punto | Fase 4 (ingestion OpenMetadata) |
+| Qualunque cosa | mai `claude-fable-5` senza richiesta esplicita dell'owner | consuma budget al doppio della velocità di opus-5, ed è il pool già esaurito |
+
+**Il driver dominante non è il modello: è la lunghezza della sessione.**
+La sessione Fase 0 ha totalizzato 63 milioni di token di lettura da cache perché
+è rimasta viva attraverso sette cicli di CI, rileggendo l'intera conversazione a
+ogni turno. Da qui quattro regole che pesano più della scelta del modello:
+
+1. **Scope stretto**: una sessione per issue o per piccolo gruppo di issue
+   affini, non per fase intera.
+2. **Briefing completo all'avvio**: ogni cosa che la sessione deve scoprire da
+   sola diventa contesto che poi rilegge a ogni turno successivo.
+3. **Non restare vivi ad aspettare**: dopo un push che innesca la CI, chiudere
+   il turno. Un check successivo rilegge solo ciò che serve, invece di tenere in
+   vita una conversazione che cresce.
+4. **Prima di creare una sessione, verificare se una esistente può riprendere**
+   (§3.8): una sessione ferma per limite di crediti riparte con un cambio
+   modello, e ricrearla raddoppia il costo del contesto già pagato.
+
+## 8. Compressione della memoria
+
+Il percorso di onboarding (§1) viene letto al primo turno e **resta in contesto
+per tutti i turni successivi**: il suo peso si moltiplica per la lunghezza della
+sessione. Misura del 26/08/2026, a Fase 0: **101 KB, ~28.800 token**. Con sei
+logbook di fase diventerebbe tre o quattro volte tanto, a parità di utilità.
+
+Comprimere qui significa **distillare, mai cancellare**: l'originale si sposta in
+`docs/logbook/archive/`, git conserva tutto, e il percorso di onboarding resta di
+dimensione costante mentre il progetto cresce.
+
+**Non si comprime mai** (se una di queste sparisce, la compressione è una
+regressione, non un'ottimizzazione):
+1. Le decisioni, il loro perché, e **le alternative scartate**.
+2. I numeri misurati: esiti dei test, misure, costi.
+3. Gli item aperti: blocchi, sospesi, decisioni richieste all'owner.
+4. Le lezioni operative che hanno generato una regola di questo file.
+
+**È rumore, e si comprime**: la narrazione del *come* (sette giri di CI → una
+riga con i due difetti trovati); lo stato ormai superato (un blocco poi risolto,
+un "prossimo passo" già eseguito); la duplicazione dello stesso fatto tra §2,
+logbook e CHANGELOG; le minuzie di coordinamento fra sessioni, una volta che la
+fase è chiusa.
+
+**Quando**: obbligatoriamente alla chiusura di ogni fase (tag). Il lavoro è quasi
+già fatto, perché la **SINTESI DI FASE** in testa al logbook (§4) è mantenuta
+viva da ogni sessione: alla chiusura si congela come ESITO FASE, si copia in
+`docs/logbook/SINTESI_fasi_chiuse.md` (una pagina per fase, non di più) e
+l'originale integrale va in `archive/`. Fuori dalle
+chiusure, quando il percorso di onboarding supera **40.000 token**.
+
+**Verifica** (vale la regola §3.1: nessun "fatto" senza riscontro): la sintesi è
+valida solo se, leggendo *solo* lei, una sessione nuova sa dire quali decisioni
+sono state prese e perché, quali numeri sono stati misurati, e che cosa è
+rimasto aperto. Se non ci riesce, la compressione ha perso informazione: si
+rifà, non si accetta.
+
+**Nota sul livello sessione**: la entry di logbook **è** la forma compressa del
+contesto di una sessione. Il criterio di qualità di una entry è esattamente
+questo — la sessione successiva deve poter proseguire leggendo lei sola, senza
+la conversazione che l'ha prodotta.
+
+**Metrica**: il peso del percorso di onboarding va riportato nel campo "Costo
+della sessione" (§4) a ogni chiusura di fase, per vedere se resta piatto.
+
+## 9. Riferimenti rapidi
 
 - Stack base: `docker compose -f docker-compose-northstream-ai.yml up -d` ·
   addon: `./start-addon.sh` (`--gpu` per passthrough) · connettore CDC:

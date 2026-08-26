@@ -1,8 +1,60 @@
 # LOGBOOK — Fase 0: Baseline (pre-v0.0.1)
 
-Memoria di fase secondo `CLAUDE.md` §4. Solo append; ultima entry = punto di
-ripartenza della sessione successiva. La fase si chiude con la entry "ESITO FASE"
-quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
+Memoria di fase secondo `CLAUDE.md` §4. Le **entry** sono append-only e non si
+riscrivono mai. La **testa** qui sotto è l'unica parte che si riscrive: è la
+forma compressa della fase, e alla chiusura diventa l'ESITO FASE.
+
+> **Per una sessione nuova**: leggi la testa e l'ultima entry. Le entry
+> intermedie servono solo per ricostruire un dettaglio che la testa non copre.
+
+---
+
+## SINTESI DI FASE — aggiornata al 2026-08-26, 21:10 UTC
+
+**Dove siamo**: Fase 0 quasi chiusa. Tag `v0.0.0-baseline` → `5eb456a` pubblicato.
+Su `release/v0.0.1`: harness `bench/t0/` (12 test), tre workflow CI, fix
+documentali. Restano #10 (collaudo in macchina) e #13 (run T0 con LLM veri) sulla
+Z8, poi #15 (tag `v0.0.1`, azione dell'owner).
+
+**Decisioni prese, con il perché**
+- **Storyline README accorciata, non costruita**: i layer non collegati (Flink,
+  Apicurio, MinIO, Trino, OpenMetadata) sono dichiarati tali invece di
+  implementarli. Costruirli erano settimane per una pipeline vista tre minuti in
+  demo; un diagramma con frecce inventate è un rischio reputazionale.
+- **Niente PR flow, CI con smoke test al suo posto**: a bus factor 1 la review di
+  sé stessi è cerimonia; i difetti reali (P-1, P-2) non si vedono in un diff, si
+  vedono eseguendo. PR flow al secondo contributor.
+- **Boost keyword su `KNOWN_SITES` resta fino a v0.0.4**, solo dichiarato nel
+  demo-script: rimuoverlo prima romperebbe la demo senza il sostituto pronto.
+- **Scenografia congelata** fino a dopo v0.1.0-beta1.
+- **Issue #1 (Norimberga/MoE)**: decisione rimandata ai numeri della matrice EVAL
+  (Fase 5) — la premessa dell'issue era imprecisa, il tier Optimal è già MoE.
+- **I tag di release sono un'azione locale**: le sessioni cloud hanno il push dei
+  tag rifiutato dal proxy git (HTTP 403, verificato).
+- **Le sessioni bridge (CLI locale) si raggiungono solo** via `create_trigger`
+  con `persistent_session_id` + `fire_trigger`; non espongono `usage`.
+- **P-5 (tier RAM) non è verificabile su ENV-W**: con 256 GB fisici le JVM
+  auto-dimensionano l'heap, quindi i numeri sono un limite superiore non
+  trasferibile. Serve ENV-L o `mem_limit` espliciti.
+
+**Numeri misurati**
+- Run verde `ci-smoke-33008193653`: 4 PASS + 2 XFAIL, zero FAIL.
+- **A-3 e A-5 confermati per misura** (erano deduzioni statiche della review).
+- **A-8 scoperto per misura**: l'agent resta cieco ai topic CDC per 4 min 46 s
+  seguendo l'ordine documentato. Non era nella review. Issue #39, fix in v0.0.4.
+- **T0.12 XFAIL → PASS**: è il progression test dichiarato per v0.0.1.
+- Costo del processo finora: 81,6 M token letti da cache contro 310 mila
+  generati (263:1), ~$103,81 nozionali. Il costo è rilettura, non generazione.
+- Percorso di onboarding: 101 KB, ~28.800 token.
+
+**Aperto**
+- #10 e #13 in corso sulla Z8; #15 (tag `v0.0.1`) attende l'owner.
+- RP-0 (probe DinD su RunPod) non eseguito.
+- Runner self-hosted `env-w` e variabile `RUN_NIGHTLY` da configurare.
+- Limite settimanale `claude-fable-5` esaurito fino al ~28/08.
+
+**Prossimo passo**: alla consegna della Z8, verificare il gate di v0.0.1 e
+chiedere all'owner il tag.
 
 ---
 
@@ -549,3 +601,55 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
      su un clone pulito.
   5. **Runner self-hosted ENV-W + `RUN_NIGHTLY`** (issue #12): resta aperto, non era
      nello scope di questa sessione.
+
+## 2026-08-26 (7ª entry) — supervisione (sessione remota) — Claude Code
+
+- **Obiettivo della sessione**: coordinare le due sessioni operative fino alla
+  consegna, e registrare per la prima volta il **costo del processo** in token.
+- **Fatto**:
+  - Accettato e formalizzato il finding **A-8** proposto dalla sessione Fase 0
+    (agent cieco ai topic CDC per ~5 min seguendo l'ordine documentato, misurato
+    a 4m46s); aperta la issue #39 sotto la Fase 3 con progression test T0.13;
+    marcati **A-3 e A-5 come confermati da misura** (commit `5f8ba96`).
+  - Chiusa la issue #9 (tag `v0.0.0-baseline` creato dall'owner).
+  - Gestita la morte della sessione Z8 per timeout SSH e l'allineamento della
+    sostitutiva (`session_01DgGUpEVwGvHnPVNWZ4jPgr`) sullo stato reale.
+  - `CLAUDE.md`: regola tmux per ENV-W, §3.8 una-sola-sessione-per-scope, §7
+    politica di scelta del modello ed economia dei token.
+- **Costo del processo — prima misurazione** (dati da `get_session`, prezzi di
+  listino API; l'owner è su abbonamento **MAX**, quindi il denaro è nozionale:
+  la valuta scarsa sono i **rate limit**):
+
+  | Sessione | Modello | Durata | Cache read | Output | Costo nozionale |
+  |---|---|---|---|---|---|
+  | Supervisione | opus-5 | 3h15 | 16,1 M | 99.915 | $54,10 |
+  | Fase 0 cloud (#11/#12/#14) | fable-5 → opus-5 | 1h30 | 63,1 M | 181.315 | $45,84 |
+  | └ di cui parte fable-5 | fable-5 | ~10 min | 1,3 M | 23.876 | $6,41 |
+  | Duplicato archiviato | opus-5 | 7 min | 2,4 M | 28.793 | $3,88 |
+  | Z8 / ENV-W (2 sessioni) | opus-5 | ~1h40 | — | — | non esposto |
+  | **Totale misurabile** | | | **81,6 M** | **310.023** | **$103,81** |
+
+- **Decisioni prese / cose imparate dai numeri**:
+  1. **Il costo è rilettura, non generazione**: 81,6 M di token letti dalla cache
+     contro 310 mila generati — rapporto 263 a 1. Ottimizzare la lunghezza delle
+     conversazioni vale molto più che scegliere un modello più economico.
+  2. **La sessione Fase 0 ha letto 63,1 M in un'ora e mezza**, contro i 16,1 M
+     della supervisione in tre ore e un quarto: quasi quattro volte tanto in metà
+     tempo, perché è rimasta viva attraverso sette cicli di CI con output di tool
+     voluminosi. Da qui la regola §7.3: dopo un push che innesca la CI si chiude
+     il turno, non si aspetta dentro la sessione.
+  3. **Il duplicato è costato $3,88 senza produrre nulla** — errore di
+     supervisione che ha generato la regola §3.8.
+  4. **fable-5 ha bruciato $6,41 in dieci minuti** per creare un branch e fare un
+     merge, poi ha esaurito il limite settimanale bloccando la sessione. Rapporto
+     valore/consumo sfavorevole per lavoro meccanico: da qui la tabella §7.
+  5. Le sessioni **bridge** (Claude CLI locale) non espongono `usage`: il consumo
+     di ENV-W non è misurabile da remoto. Va annotato come tale, non stimato.
+- **Test eseguiti**: nessuno (supervisione senza Docker).
+- **Non funziona / sospeso**: #10 e #13 in corso sulla Z8; tag `v0.0.1` (#15) in
+  attesa; RP-0 non eseguito; runner self-hosted e variabile `RUN_NIGHTLY` da
+  configurare.
+- **Prossimo passo per la sessione successiva**: alla consegna della Z8,
+  verificare il gate di v0.0.1 e chiedere all'owner il tag.
+- **Decisioni richieste all'owner**: nessuna nuova. Restano aperte: registrazione
+  del runner self-hosted `env-w` e tag `v0.0.1` quando il gate è verde.

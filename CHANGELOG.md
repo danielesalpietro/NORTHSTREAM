@@ -11,6 +11,17 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 ## [Unreleased]
 
 ### Added
+- `bench/t0/` — harness della suite T0: 12 test indipendenti dall'ordine, valori
+  sentinella fissi (77.31, 91.73, Depot-9/93.17), output JSON per test, semantica
+  PASS/XFAIL/FAIL/XPASS/SKIP e attese dichiarate in `expected/` (O1.2, issue #11).
+- `bench/t0/lib/doc_truth.py` — linter di verità documentale, il test T0.12:
+  layout README vs file reali, endpoint della tabella servizi vs compose, sezione
+  License vs LICENSE, header di tabella duplicati, placeholder residui
+  (D-1, D-2, P-1 doc).
+- `bench/ci/mock-ollama.yml` + `bench/ci/mock-ollama/` — stub HTTP deterministico
+  che sostituisce Ollama in CI: embedding da hash del testo, `/api/generate` che
+  fa eco al contesto. Testa la pipeline, non il modello (issue #11).
+- `.gitignore` — esclude `results/` (gli output grezzi dei run non stanno nel repo).
 - `docs/review_tecnica.md` — review tecnica critica della baseline (issue #2).
 - `docs/piano_ricovero.md` — piano di ricovero verso v0.1.0-beta1 (O1–O7, suite T0/EVAL/soak, release train).
 - `CLAUDE.md` — direttive vincolanti di onboarding e chiusura per ogni sessione (O1.2, anti-dispersione memoria).

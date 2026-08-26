@@ -38,6 +38,9 @@ REPORT_DIR=""
 ENV_TAG="${NS_ENV:-envx}"
 LIST_ONLY="no"
 
+# Hard ceiling per test, so one wedged test cannot consume the whole CI budget.
+NS_TEST_TIMEOUT="${NS_TEST_TIMEOUT:-600}"
+
 # Suite composition. 'ci' matches the ci-smoke workflow (no GPU, mock Ollama);
 # 'static' needs neither a running stack nor a Docker daemon for T0.12.
 SUITE_CI="T0.1 T0.2 T0.3 T0.4 T0.8 T0.11"
@@ -147,9 +150,18 @@ for id in $TESTS; do
     echo "--- $id ($(basename "$script")) — expected: $expected"
 
     start="$(date +%s)"
-    NS_REPO="$REPO" NS_RESULTS="$REPORT_DIR" bash "$script" >>"$REPORT_DIR/${id}.log" 2>&1
+    # No single test may hang the suite: a wedged probe becomes a KO with a
+    # recorded duration, not a job that runs until the CI timeout kills it.
+    NS_REPO="$REPO" NS_RESULTS="$REPORT_DIR" \
+        timeout --signal=TERM --kill-after=30 "$NS_TEST_TIMEOUT" \
+        bash "$script" >>"$REPORT_DIR/${id}.log" 2>&1
     code=$?
     duration=$(( $(date +%s) - start ))
+
+    if (( code == 124 || code == 137 )); then
+        echo "    (killed after ${NS_TEST_TIMEOUT}s)" >>"$REPORT_DIR/${id}.log"
+        code=1
+    fi
 
     case "$code" in
         0) observed="OK" ;;
@@ -157,7 +169,7 @@ for id in $TESTS; do
         *) observed="KO" ;;
     esac
 
-    summary=""
+    summary="test interrupted before it could report (see ${id}.log)"
     if [[ -f "$REPORT_DIR/${id}.json" ]]; then
         summary="$(python3 -c "
 import json, sys

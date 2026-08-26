@@ -21,8 +21,11 @@ ns_cleanup_sentinels
 trap ns_cleanup_sentinels EXIT
 
 consume_log="$(mktemp)"
+# The consumer is bounded by wall clock, not by --timeout-ms: with the data
+# generator running there is always another message within a few seconds, so
+# an idle timeout would never fire and the test would hang.
 docker exec "$NS_C_KAFKA" bash -lc \
-    "kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic ${topic} --timeout-ms $((NS_CDC_TIMEOUT * 1000)) 2>/dev/null" \
+    "timeout ${NS_CDC_TIMEOUT} kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic ${topic} 2>/dev/null" \
     >"$consume_log" &
 consumer_pid=$!
 sleep 5

@@ -33,7 +33,7 @@ for point in doc.get('result', {}).get('points', []):
 }
 
 # Wait until the collection holds enough points to make the assertion meaningful.
-deadline=$(( $(ns_now) + NS_STACK_TIMEOUT ))
+deadline=$(( $(ns_now) + NS_INDEX_TIMEOUT ))
 before=""
 while (( $(ns_now) < deadline )); do
     before="$(point_count)"
@@ -54,7 +54,7 @@ docker restart "$NS_C_AGENT" >/dev/null
 ns_observe "agent restarted"
 
 # Wait for roughly new_events additional events to be produced and indexed.
-deadline=$(( $(ns_now) + NS_STACK_TIMEOUT ))
+deadline=$(( $(ns_now) + NS_INDEX_TIMEOUT ))
 after="$before"
 while (( $(ns_now) < deadline )); do
     sleep 10

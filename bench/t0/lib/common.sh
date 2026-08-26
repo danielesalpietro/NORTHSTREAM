@@ -56,6 +56,7 @@ NS_KAFKA_HOST_BOOTSTRAP="${NS_KAFKA_HOST_BOOTSTRAP:-localhost:9092}"
 # Timeouts (seconds). Overridable so the same test can run fast in CI and
 # realistically on a workstation.
 NS_STACK_TIMEOUT="${NS_STACK_TIMEOUT:-420}"
+NS_INDEX_TIMEOUT="${NS_INDEX_TIMEOUT:-240}"
 NS_CDC_TIMEOUT="${NS_CDC_TIMEOUT:-30}"
 NS_AGENT_TIMEOUT="${NS_AGENT_TIMEOUT:-60}"
 NS_RECENCY_SECONDS="${NS_RECENCY_SECONDS:-900}"

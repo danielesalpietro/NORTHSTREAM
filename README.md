@@ -503,7 +503,9 @@ raw-events
 curated-data
 ```
 
-These buckets are intended to represent a simplified data lakehouse layout.
+These buckets represent a simplified data lakehouse layout. They are created
+empty and stay empty: as the [Layer status](#layer-status) table says, nothing
+in the current pipeline writes to object storage yet.
 
 ---
 

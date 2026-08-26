@@ -302,3 +302,12 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
   `bench/t0/expected/baseline.json` va corretto **prima** del run di riferimento,
   altrimenti il report registra un XPASS che è solo un'attesa sbagliata. P-5
   (tier RAM) resta fuori portata anche dalla Z8: non costruirci asserzioni.
+- **Nota git per chi condivide `release/v0.0.1`**: `git pull --rebase` con un
+  **merge commit** nella storia locale non lo preserva — lo appiattisce e
+  ririproduce uno per uno i commit del branch mergiato, riaprendo conflitti già
+  risolti (successo qui col merge `dddbfe4`). Il rebase è stato annullato senza
+  danni (il push aveva già pubblicato il ref corretto, `a6a81a0`). Regola pratica
+  per le sessioni che si alternano su questo branch: `git fetch` prima, e **solo
+  se** il remoto è davvero avanti integrare con `git merge` (o `pull --rebase
+  --rebase-merges`); mai un rebase alla cieca quando la propria storia contiene
+  merge.

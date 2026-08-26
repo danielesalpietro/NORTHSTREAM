@@ -114,6 +114,50 @@ print(doc.get('flips', {}).get(sys.argv[2], ''))
 " "$EXPECTED_FILE" "$1"
 }
 
+# A test whose own parameters exceed the global ceiling would be killed before it
+# could measure anything: T0.9 has to let an event grow stale, so its floor is the
+# recency threshold plus the fixed cost of indexing, asking and cleaning up.
+test_timeout_for() {
+    local id="$1"
+    if [[ "$id" == "T0.9" ]]; then
+        local floor=$(( ${NS_RECENCY_SECONDS:-300} + 300 ))
+        if (( floor > NS_TEST_TIMEOUT )); then
+            printf '%s' "$floor"
+            return
+        fi
+    fi
+    printf '%s' "$NS_TEST_TIMEOUT"
+}
+
+# What actually ran, for the manifest: image ids and digests of the northstream
+# containers plus the models loaded in Ollama. Required by section 3 of
+# docs/piano_ricovero.md — a run nobody can reproduce is not a measurement.
+collect_environment() {
+    local images="" models="" name image id digest
+    if command -v docker >/dev/null 2>&1; then
+        while IFS=$'\t' read -r name image; do
+            [[ -z "$name" ]] && continue
+            id="$(docker inspect --format '{{.Id}}' "$image" 2>/dev/null || true)"
+            digest="$(docker inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$image" 2>/dev/null || true)"
+            images+="${name}"$'\t'"${image}"$'\t'"${id}"$'\t'"${digest}"$'\n'
+        done < <(docker ps --filter 'name=northstream-' --format '{{.Names}}\t{{.Image}}' 2>/dev/null)
+        models="$(docker exec northstream-ollama ollama list 2>/dev/null || true)"
+    fi
+    NS_ENV_IMAGES="$images" NS_ENV_MODELS="$models" python3 -c '
+import json, os, sys
+images = []
+for line in os.environ.get("NS_ENV_IMAGES", "").splitlines():
+    if not line.strip():
+        continue
+    parts = (line.split("\t") + ["", "", "", ""])[:4]
+    images.append({"container": parts[0], "image": parts[1],
+                   "image_id": parts[2], "digest": parts[3]})
+models = [l for l in os.environ.get("NS_ENV_MODELS", "").splitlines()
+          if l.strip() and not l.startswith("NAME")]
+json.dump({"images": images, "models": models}, open(sys.argv[1], "w"), indent=2)
+' "$1"
+}
+
 verdict_for() {
     local expected="$1" observed="$2"
     case "${expected}/${observed}" in
@@ -152,14 +196,15 @@ for id in $TESTS; do
     start="$(date +%s)"
     # No single test may hang the suite: a wedged probe becomes a KO with a
     # recorded duration, not a job that runs until the CI timeout kills it.
+    test_timeout="$(test_timeout_for "$id")"
     NS_REPO="$REPO" NS_RESULTS="$REPORT_DIR" \
-        timeout --signal=TERM --kill-after=30 "$NS_TEST_TIMEOUT" \
+        timeout --signal=TERM --kill-after=30 "$test_timeout" \
         bash "$script" >>"$REPORT_DIR/${id}.log" 2>&1
     code=$?
     duration=$(( $(date +%s) - start ))
 
     if (( code == 124 || code == 137 )); then
-        echo "    (killed after ${NS_TEST_TIMEOUT}s)" >>"$REPORT_DIR/${id}.log"
+        echo "    (killed after ${test_timeout}s)" >>"$REPORT_DIR/${id}.log"
         code=1
     fi
 
@@ -185,6 +230,11 @@ print(json.load(open(sys.argv[1])).get('summary', ''))
 done
 
 finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# What the stack was made of, so the run can be reproduced or its differences
+# explained later (docs/piano_ricovero.md section 3).
+env_file="$(mktemp)"
+collect_environment "$env_file"
 
 # manifest.json — the machine-readable record of this run.
 {
@@ -218,14 +268,15 @@ json.dump({
     'expected_file': expected_file,
     'started_at': started,
     'finished_at': finished,
+    'stack': json.load(open(sys.argv[2])) if len(sys.argv) > 2 else {},
     'counts': counts,
     'results': results,
 }, open(sys.argv[1], 'w'), indent=2)
 print(json.dumps(counts))
-" "$REPORT_DIR/manifest.json" >"$REPORT_DIR/.counts"
+" "$REPORT_DIR/manifest.json" "$env_file" >"$REPORT_DIR/.counts"
 
 counts="$(cat "$REPORT_DIR/.counts")"
-rm -f "$REPORT_DIR/.counts"
+rm -f "$REPORT_DIR/.counts" "$env_file"
 
 # summary.md — the human-readable table that goes into docs/runs/.
 {
@@ -246,6 +297,23 @@ rm -f "$REPORT_DIR/.counts"
     echo
     echo "Conteggi: \`$counts\`"
 } >"$REPORT_DIR/summary.md"
+
+# SHA256SUMS last, over everything else: an archive nobody can verify is not an
+# archive (docs/piano_ricovero.md section 3, and the RunPod shutdown rule).
+if command -v sha256sum >/dev/null 2>&1; then
+    (
+        cd "$REPORT_DIR" || exit 0
+        find . -type f ! -name SHA256SUMS -print0 | sort -z |
+            xargs -0 sha256sum >SHA256SUMS
+        if sha256sum -c --status SHA256SUMS; then
+            echo "checksums: $(wc -l <SHA256SUMS) file(s), verified"
+        else
+            echo "checksums: SHA256SUMS did not verify against its own directory" >&2
+        fi
+    )
+else
+    echo "checksums: sha256sum not available, SHA256SUMS not generated" >&2
+fi
 
 echo "counts:  $counts"
 echo "report:  $REPORT_DIR/summary.md"

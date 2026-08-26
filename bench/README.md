@@ -84,10 +84,40 @@ makes the suite order-independent.
 ## Output
 
 Each run writes to `results/<RUN_ID>/` (git-ignored):
-`manifest.json` (machine-readable), `summary.md` (the table that goes into
-`docs/runs/`), one `<test>.json` and one `<test>.log` per test. `RUN_ID`
-follows `docs/piano_ricovero.md` section 3:
+
+| File | What it is |
+|---|---|
+| `manifest.json` | machine-readable record: verdicts, durations, and a `stack` section with the image ids and digests of the running `northstream-*` containers plus the Ollama models loaded |
+| `summary.md` | the table that goes into `docs/runs/` |
+| `<test>.json`, `<test>.log` | per-test result and full output |
+| `SHA256SUMS` | checksums of everything above, generated last and self-verified |
+
+`RUN_ID` follows `docs/piano_ricovero.md` section 3:
 `<YYYYMMDD-HHMM>-<env>-<git-sha-short>`.
+
+Both `SHA256SUMS` and the `stack` section exist because section 3 of the plan
+requires an archive that can be verified and a run that can be reproduced — and
+a rule nobody can follow without extra manual work is a rule that eventually
+gets skipped. After copying an archive elsewhere, verify it with
+`sha256sum -c SHA256SUMS` from inside the copy; on RunPod that check is what
+gates powering the pod off. When the harness runs without a Docker daemon the
+`stack` section is empty rather than absent: an honest "nothing observed"
+instead of a silent omission.
+
+## Timeouts
+
+`NS_TEST_TIMEOUT` (default 600 s) is a ceiling per test, so one wedged probe
+cannot consume a whole CI budget. A test whose own parameters need longer gets
+that ceiling raised automatically rather than being killed mid-measurement:
+T0.9 has to let an event grow stale, so its floor is
+`NS_RECENCY_SECONDS + 300`.
+
+`NS_RECENCY_SECONDS` defaults to **300**, not the 900 the plan mentions. With
+900 against a 600 s ceiling the test could never finish — the first reference
+run on ENV-W had to override both values by hand. At 300 the assertion is
+weaker (the context keeps events older than 5 minutes, not 15) but still shows
+the defect, and it holds with the defaults alone. A run that wants the stronger
+assertion passes `NS_RECENCY_SECONDS=900` and the timeout follows on its own.
 
 ## The mock model
 

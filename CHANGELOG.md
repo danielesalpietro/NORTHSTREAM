@@ -29,6 +29,10 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 - `.github/workflows/ci-nightly.yml` — suite completa con modelli reali su runner
   self-hosted `[self-hosted, env-w]`, schedule + `workflow_dispatch`, dormiente
   finché l'owner non registra il runner e la variabile `RUN_NIGHTLY` (issue #12).
+- `bench/t0/run.sh`: ogni run genera `SHA256SUMS` (verificato subito) e registra nel
+  `manifest.json` la sezione `stack` con image id e digest dei container in esecuzione
+  più i modelli Ollama caricati — l'archiviazione di `docs/piano_ricovero.md` §3 non
+  richiede più passaggi manuali (issue #11, lacuna emersa dal run di riferimento ENV-W).
 - `.yamllint.yml` — configurazione del linter YAML usata da ci-static.
 - `docs/runs/` — report dei run T0 eseguiti in CI: `ci-smoke-33006019554.md`
   (primo run, rosso, con le prime misure di A-3 e A-5) e `ci-smoke-33008193653.md`
@@ -70,6 +74,12 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
   resta identico: i default del compose coincidono coi valori del vecchio `.env`.
 
 ### Fixed
+- `bench/t0/`: i default erano internamente incoerenti — `NS_RECENCY_SECONDS=900`
+  superava il tetto per-test `NS_TEST_TIMEOUT=600`, quindi **T0.9 con i soli default
+  veniva sempre ucciso dal timeout** e non avrebbe mai potuto flippare in v0.0.4.
+  Ora la soglia di recency è 300 di default e il tetto del singolo test si deriva dai
+  suoi parametri (`NS_RECENCY_SECONDS + 300`): chi vuole l'asserzione più forte passa
+  900 e il timeout lo segue da solo. Scelta documentata in `bench/README.md` (#11).
 - README: rimossa la doppia riga di header nella tabella dei modelli Granite,
   che rompeva il rendering (D-2).
 - `docker-compose-northstream-ai.yml`: rimossi spazi a fine riga e aggiunta la

@@ -79,7 +79,43 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
   aggiungere manualmente #3–#38 al board) e, se gradito, configurare le colonne
   per fase.
 
-## 2026-08-26 (3ª entry) — sessione remota (ENV: nessuno — niente demone Docker) — Claude Code, sessione operativa Fase 0
+## 2026-08-26 (3ª entry) — supervisione (sessione remota) — Claude Code
+
+- **Obiettivo della sessione**: attivare le sessioni operative della Fase 0 e
+  coordinarle.
+- **Fatto**:
+  - Creata sessione cloud Fase 0 (`session_01GaPWBapF7LMthmjyPoC9Cd`) per
+    #11/#12/#14. Ha eseguito metà di #9 (branch `release/v0.0.1` + merge
+    documentazione, commit 0067d37) e si è poi **fermata per esaurimento
+    crediti** (limite settimanale su claude-fable-5, reset ~2026-08-28).
+    Non è un errore della sessione: il lavoro fatto è valido.
+  - Ricreata come `session_01Tbs7yjoazhi7YsdwL2XY8Q` su claude-opus-5, stesso
+    scope, con lo stato ereditato dichiarato nel prompt.
+  - Assegnata la issue #10 alla sessione Claude CLI sulla Z8
+    (`session_012WiW8ep5PVnGmm7exagMDu`, bridge): collaudo in macchina degli 8
+    punti di misura + creazione del tag + eventuale runner self-hosted.
+- **Decisioni prese**:
+  - **Il tag `v0.0.0-baseline` non è creabile dalle sessioni cloud**: il proxy
+    git dell'ambiente remoto rifiuta il push dei tag (HTTP 403, verificato).
+    Delegato alla Z8. Regola generale: i tag di release li appone una sessione
+    locale dell'owner, non le sessioni cloud.
+  - Non esiste canale di messaging diretto verso le sessioni bridge: il modo
+    funzionante è `create_trigger` con `persistent_session_id` + `fire_trigger`
+    (usato per l'assegnazione a ENV-W).
+  - #9 risulta eseguita in ordine invertito (merge prima del tag): senza
+    conseguenze, perché il tag punta al commit immutabile 5eb456a.
+- **Test eseguiti**: nessuno (supervisione senza Docker).
+- **Non funziona / sospeso**: tag ancora assente al momento di questa entry;
+  `bench/` e `.github/` non ancora esistenti; RP-0 non eseguito.
+- **Prossimo passo per la sessione successiva**: verificare il tag, poi #11/#12
+  fino a CI verde; alla consegna del collaudo Z8, confrontare gli esiti con i
+  finding della review e correggere `docs/review_tecnica.md` se smentiti.
+- **Decisioni richieste all'owner**: (a) confermare il secondo runner
+  self-hosted per NORTHSTREAM con label `env-w` (opzione A: non tocca il runner
+  dell'altro repo); (b) sapere che il limite settimanale su fable-5 è esaurito
+  fino al ~28/08: le sessioni vanno create su opus-5 o sonnet-5 nel frattempo.
+
+## 2026-08-26 (4ª entry) — sessione remota (ENV: nessuno — niente demone Docker) — Claude Code, sessione operativa Fase 0
 
 - **Obiettivo della sessione**: eseguire le sub-issue #9, #11, #12, #14 della
   Fase 0: tag baseline e apertura di `release/v0.0.1`, harness `bench/t0/`,

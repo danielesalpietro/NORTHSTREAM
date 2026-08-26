@@ -43,11 +43,12 @@ la prima azione della sessione è segnalarlo nel logbook, non ricostruirlo a mem
 | Campo | Valore |
 |---|---|
 | **Fase attiva** | Fase 0 — Baseline, release `v0.0.1` in preparazione |
-| **Baseline** | `develop` @ `5eb456a` — tag `v0.0.0-baseline` creato **in locale**, push bloccato (v. Blocchi aperti) |
-| **Branch di lavoro** | `release/v0.0.1` (contiene il merge di `claude/project-plan-review-473nje` + harness + CI + fix documentali) |
+| **Baseline** | `develop` @ `5eb456a` — tag `v0.0.0-baseline` **creato e pubblicato** dalla sessione ENV-W |
+| **Branch di lavoro** | `release/v0.0.1` (merge di `claude/project-plan-review-473nje` + harness `bench/` + CI + fix documentali O2) |
 | **Ultimo run T0** | [`docs/runs/ci-smoke-33008193653.md`](docs/runs/ci-smoke-33008193653.md) — suite `ci` verde su runner GitHub con mock-ollama: 4 PASS + 2 XFAIL (A-3, A-5 ora **misurati**). **Mai eseguita** la suite completa con modelli reali: serve ENV-L/ENV-W (issue #13) |
-| **Prossima azione** | [#10](https://github.com/danielesalpietro/NORTHSTREAM/issues/10) collaudo in macchina e [#13](https://github.com/danielesalpietro/NORTHSTREAM/issues/13) run T0 contro il tag baseline (ENV-L/ENV-W, owner) → poi [#15](https://github.com/danielesalpietro/NORTHSTREAM/issues/15) tag `v0.0.1` |
-| **Blocchi aperti** | Push del tag `v0.0.0-baseline` rifiutato con HTTP 403 dalla sessione remota (i branch passano, i tag no): **deve pusharlo l'owner** — v. logbook. · RP-0 (probe DinD su RunPod, issue #34) non ancora eseguito |
+| **Prossima azione** | [#10](https://github.com/danielesalpietro/NORTHSTREAM/issues/10) collaudo in macchina e [#13](https://github.com/danielesalpietro/NORTHSTREAM/issues/13) run T0 contro il tag baseline (ENV-W) → poi [#15](https://github.com/danielesalpietro/NORTHSTREAM/issues/15) tag `v0.0.1` |
+| **Sessioni operative attive** | Fase 0 cloud (`session_01GaPWBapF7LMthmjyPoC9Cd`, opus-5): #11/#12/#14 — **completate** · ENV-W Z8 (`session_012WiW8ep5PVnGmm7exagMDu`, bridge): #10 + tag baseline. Entrambe pushano su `release/v0.0.1` |
+| **Blocchi aperti** | RP-0 (probe DinD su RunPod, issue #34) non ancora eseguito · runner self-hosted ENV-W + variabile `RUN_NIGHTLY` da configurare per attivare `ci-nightly` (issue #12) · limite settimanale claude-fable-5 esaurito fino al ~28/08 (usare opus-5 o sonnet-5) |
 | **Tracking fasi** | Fase 0 [#3](https://github.com/danielesalpietro/NORTHSTREAM/issues/3) · Fase 1 [#4](https://github.com/danielesalpietro/NORTHSTREAM/issues/4) · Fase 2 [#5](https://github.com/danielesalpietro/NORTHSTREAM/issues/5) · Fase 3 [#6](https://github.com/danielesalpietro/NORTHSTREAM/issues/6) · Fase 4 [#7](https://github.com/danielesalpietro/NORTHSTREAM/issues/7) · Fase 5 [#8](https://github.com/danielesalpietro/NORTHSTREAM/issues/8) — ogni fase ha sub-issue collegate; una fase si apre solo col tag della precedente |
 | **Issue di riferimento** | [#2](https://github.com/danielesalpietro/NORTHSTREAM/issues/2) (review) · [#1](https://github.com/danielesalpietro/NORTHSTREAM/issues/1) (Norimberga: decisione in Fase 5, issue #36) |
 
@@ -75,6 +76,16 @@ la prima azione della sessione è segnalarlo nel logbook, non ricostruirlo a mem
    esporre nuovi servizi su `0.0.0.0` (target: `127.0.0.1`, da v0.0.2).
 7. **Lingua.** Documentazione di progetto (`docs/`, logbook, CHANGELOG) in italiano;
    codice, commenti nel codice e README in inglese (pubblico del repo).
+8. **Una sola sessione per scope.** Ogni fase (e ogni issue) ha una sola sessione
+   che la lavora, registrata nella riga "Sessioni operative attive" di §2. Prima
+   di creare una sessione per un lavoro già assegnato, **verificarne lo stato
+   reale**: una sessione ferma per limite di crediti non è morta — riprende da
+   sola quando l'owner le cambia modello, e nel frattempo una sostitutiva
+   creerebbe due sessioni che pushano sullo stesso branch. In caso di doppione:
+   sopravvive quella più avanti, l'altra si interrompe e archivia, e chi resta
+   viene allineata sullo stato che si è persa. Sessioni con scope diversi sullo
+   stesso branch (es. Fase 0 cloud + ENV-W) sono invece legittime: si coordinano
+   con `git pull --rebase` e con entry di logbook distinte.
 
 ## 4. Direttive di aggiornamento documentale — per ogni fase
 
@@ -136,6 +147,24 @@ grezzi in `~/NORTHSTREAM-archive/<RUN_ID>/` — mai nel repo.
   Una sessione che non ha accesso ad alcun ambiente di esecuzione (es. sessione
   remota senza Docker) lo dichiara nel logbook e si limita a lavoro statico:
   niente claim di esito test non eseguiti.
+- **Accesso a ENV-W (Z8)**: raggiungibile via SSH **solo dalle sessioni locali
+  dell'owner** (chiave privata sul laptop dell'owner; IP pubblico dinamico, cambia
+  a discrezione dell'ISP). Le coordinate di connessione NON vanno mai committate
+  in questo repository (è pubblico): restano in un file locale dell'owner, fuori
+  repo. Le sessioni remote e la CI raggiungono ENV-W esclusivamente tramite il
+  **runner GitHub Actions self-hosted** registrato sulla Z8 (connessione outbound:
+  immune ai cambi di IP e non richiede distribuzione di chiavi) — workflow
+  `ci-nightly` con label `[self-hosted, env-w]`, esecuzione via schedule o
+  `workflow_dispatch`. Se il runner è offline, l'unica via è chiedere all'owner
+  di intervenire dalla sessione locale.
+- **Sessione Claude CLI su ENV-W**: sulla Z8 è installata la Claude CLI. Per i
+  compiti che richiedono esecuzione reale (collaudo #10, run baseline #13, soak,
+  registrazione runner), l'owner attiva **su richiesta** una sessione locale
+  sulla Z8. Quella sessione si auto-assegna così: clone/aggiornamento del repo,
+  checkout del branch indicato dalla richiesta, onboarding da questo file (§1),
+  poi esecuzione della issue assegnata. Le sessioni remote non devono aspettarsi
+  di raggiungere la Z8 in altro modo: se serve ENV-W, si chiede all'owner di
+  attivare la sessione, indicando issue e branch.
 
 ## 6. Checklist di chiusura sessione (obbligatoria, in ordine)
 

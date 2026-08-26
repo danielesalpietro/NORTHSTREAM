@@ -1,0 +1,66 @@
+# Static checks: nothing here starts the stack, so it runs in a couple of
+# minutes on every push and is the first thing to look at when it is red.
+#
+# Defined in docs/piano_ricovero.md section 5.
+---
+name: ci-static
+
+on:
+  push:
+    branches: [develop, "release/**"]
+  workflow_dispatch:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install linters
+        run: pip install --quiet ruff==0.15.8 yamllint==1.38.0 pyyaml==6.0.2
+
+      - name: yamllint
+        run: yamllint -c .yamllint.yml .
+
+      - name: ruff (stream-agent, data-generator, bench)
+        run: ruff check stream-agent/ data-generator/ bench/
+
+      - name: hadolint (stream-agent)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: stream-agent/Dockerfile
+
+      - name: hadolint (data-generator)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: data-generator/Dockerfile
+
+      - name: hadolint (ci mock-ollama)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: bench/ci/mock-ollama/Dockerfile
+
+      - name: Shell syntax check (harness)
+        run: |
+          for script in bench/t0/run.sh bench/t0/tests/*.sh bench/t0/lib/common.sh; do
+            bash -n "$script"
+          done
+
+      # T0.1 (every compose combination validates) and T0.12 (the README
+      # describes the repository that exists). Run through the harness itself,
+      # so CI and a workstation measure the same thing the same way.
+      - name: T0 static suite (T0.1 compose config, T0.12 documentation truth)
+        run: bench/t0/run.sh --suite static --env ci-static --report results/ci-static
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t0-static-report
+          path: results/
+          if-no-files-found: ignore

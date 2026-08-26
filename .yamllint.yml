@@ -1,0 +1,23 @@
+# yamllint configuration for ci-static.
+#
+# Deliberately close to the default: the point is to catch real breakage
+# (indentation, duplicate keys, broken syntax) plus the hygiene issues that
+# make diffs noisy. Line length is a warning, not an error, because compose
+# healthcheck commands are legitimately long.
+---
+extends: default
+
+rules:
+  line-length:
+    max: 120
+    level: warning
+  # Compose files in this repository start directly with their content.
+  document-start: disable
+  comments:
+    min-spaces-from-content: 1
+  truthy:
+    # GitHub Actions uses the "on:" key, which yamllint reads as a boolean.
+    allowed-values: ["true", "false", "on"]
+
+ignore: |
+  results/

@@ -196,18 +196,25 @@ azione è ricostruire lo stato dai commit e scrivere tu l'entry mancante, marcat
 ## 7. Scelta del modello ed economia dei token
 
 L'owner ha delegato alla supervisione la scelta del modello per ogni sessione
-operativa (26/08/2026). Criterio: **il modello più economico che non thrasha** —
-una sessione che gira a vuoto costa più di un modello caro che risolve al primo
-colpo.
+operativa (26/08/2026). L'owner ha un abbonamento **MAX**: i token non si pagano
+a consumo, quindi **la valuta scarsa non è il denaro, sono i rate limit** —
+finestra a 5 ore e limite settimanale per modello. Quando si esauriscono, il
+lavoro si ferma e si aspetta: il limite settimanale su `claude-fable-5` è già
+stato bruciato una volta, bloccando una sessione operativa per circa due giorni.
+
+Criterio, quindi: **il modello più leggero che non thrasha**. Non per risparmiare
+denaro, ma per non restare senza capacità nel momento sbagliato — e perché una
+sessione che gira a vuoto consuma più budget di un modello capace che risolve al
+primo colpo.
 
 | Tipo di lavoro | Modello | Dove |
 |---|---|---|
 | Configurazione meccanica, già specificata dal piano, verificabile in CI | `claude-sonnet-5` | Fase 1 (listener Kafka, pin immagini, binding, preflight), Fase 2 (profiles, `mem_limit`, catalogo Trino) |
 | Progettazione su codice delicato, con gate di qualità da interpretare | `claude-opus-5` | Fase 3 (retrieval, point-id, recency, `/health`), Fase 5 (lettura della matrice EVAL, decisioni di release) |
 | Integrazione fiddly con prodotto poco conosciuto | `claude-sonnet-5`, escalation a `claude-opus-5` se si blocca due volte sullo stesso punto | Fase 4 (ingestion OpenMetadata) |
-| Qualunque cosa | mai `claude-fable-5` senza richiesta esplicita dell'owner | costa il doppio di opus-5 per token |
+| Qualunque cosa | mai `claude-fable-5` senza richiesta esplicita dell'owner | consuma budget al doppio della velocità di opus-5, ed è il pool già esaurito |
 
-**Il driver di costo dominante non è il modello: è la lunghezza della sessione.**
+**Il driver dominante non è il modello: è la lunghezza della sessione.**
 La sessione Fase 0 ha totalizzato 63 milioni di token di lettura da cache perché
 è rimasta viva attraverso sette cicli di CI, rileggendo l'intera conversazione a
 ogni turno. Da qui quattro regole che pesano più della scelta del modello:

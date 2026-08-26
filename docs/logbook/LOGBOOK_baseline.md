@@ -148,12 +148,37 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
     in entrambi i casi: nessun cambio di comportamento runtime in v0.0.1.
   - Stub mock-ollama avviato in locale con python → vettori 384-dim
     deterministici e normalizzati, `/api/generate` che restituisce il contesto.
-  - **CI**: `ci-static` **verde** al secondo run (il primo era rosso *solo* sullo
-    step T0.12, prima dei fix documentali: tutti i lint passavano già).
-    `ci-smoke`: primo run reale **appeso** su T0.3 → difetto del harness, non del
-    sistema (vedi sotto).
+  - **CI `ci-static`**: **verde** dal secondo run in poi. Il primo era rosso
+    *solo* sullo step T0.12 (prima dei fix #14): yamllint, ruff, i tre hadolint
+    e il syntax check passavano già. Quindi la CI ha visto il flip XFAIL→PASS
+    di T0.12 esattamente come la verifica locale.
+  - **CI `ci-smoke`** (run `33006019554`, prima esecuzione reale dello stack CDC
+    su runner GitHub con mock-ollama) — **primi esiti misurati del progetto**:
+
+    | Test | Esito | Nota |
+    |---|---|---|
+    | T0.1 | PASS (0s) | 3/3 combinazioni compose |
+    | T0.2 | FAIL (420s) | `not reachable within 420s: kafka` — **difetto del harness** |
+    | T0.3 | FAIL (5s) | sentinella 77.31 non vista — **stesso difetto del harness** |
+    | T0.4 | PASS (1s) | `agent buffered the sentinel in 0s` |
+    | T0.8 | XFAIL (41s) | `count grew by only 3 after restart: points are being overwritten` |
+    | T0.11 | XFAIL (10s) | `/health still reports ok with qdrant down` |
+
+    Lettura: **T0.4 verde con T0.3 rosso** è la firma del fatto che la pipeline
+    CDC funziona (l'evento sentinella arriva davvero all'agent) e che a fallire
+    erano le due probe che entrano nel container Kafka. **A-3 e A-5 della review
+    sono ora misurati, non più dedotti**: erano deduzioni statiche (review §6),
+    adesso hanno un output osservato.
 - **Non funziona / sospeso**:
-  - **Difetto del harness trovato e corretto** (`5762546`): T0.3 usava
+  - **Secondo difetto del harness trovato e corretto** (`f62bcbc`): T0.2 e T0.3
+    entravano nel container Kafka con `bash -lc`. La login shell ricostruisce il
+    `PATH` e perde `/opt/bitnami/kafka/bin`, quindi `kafka-topics.sh` e
+    `kafka-console-consumer.sh` risultavano inesistenti. L'healthcheck del
+    compose usa `sh -c` e infatti passava: ora le probe fanno lo stesso, e T0.3
+    conserva lo stderr del consumer così un prossimo fallimento dirà *perché*.
+    Aggiunti budget espliciti in ci-smoke (stack 240 s, index 180 s, per-test
+    300 s): nel run rotto un singolo test bruciava 420 s dei 25 minuti di job.
+  - **Primo difetto del harness trovato e corretto** (`5762546`): T0.3 usava
     `kafka-console-consumer --timeout-ms`, che scade solo dopo N ms *senza
     messaggi*; col generatore che inserisce ogni 3 s un messaggio arriva sempre,
     quindi il consumer non usciva mai. Ora il consumer è limitato dall'orologio

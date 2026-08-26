@@ -311,3 +311,55 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
   se** il remoto è davvero avanti integrare con `git merge` (o `pull --rebase
   --rebase-merges`); mai un rebase alla cieca quando la propria storia contiene
   merge.
+
+## 2026-08-26 (5ª entry) — supervisione (sessione remota) — Claude Code
+
+- **Obiettivo della sessione**: coordinare le due sessioni operative fino alla
+  consegna, e registrare per la prima volta il **costo del processo** in token.
+- **Fatto**:
+  - Accettato e formalizzato il finding **A-8** proposto dalla sessione Fase 0
+    (agent cieco ai topic CDC per ~5 min seguendo l'ordine documentato, misurato
+    a 4m46s); aperta la issue #39 sotto la Fase 3 con progression test T0.13;
+    marcati **A-3 e A-5 come confermati da misura** (commit `5f8ba96`).
+  - Chiusa la issue #9 (tag `v0.0.0-baseline` creato dall'owner).
+  - Gestita la morte della sessione Z8 per timeout SSH e l'allineamento della
+    sostitutiva (`session_01DgGUpEVwGvHnPVNWZ4jPgr`) sullo stato reale.
+  - `CLAUDE.md`: regola tmux per ENV-W, §3.8 una-sola-sessione-per-scope, §7
+    politica di scelta del modello ed economia dei token.
+- **Costo del processo — prima misurazione** (dati da `get_session`, prezzi di
+  listino API; l'owner è su abbonamento **MAX**, quindi il denaro è nozionale:
+  la valuta scarsa sono i **rate limit**):
+
+  | Sessione | Modello | Durata | Cache read | Output | Costo nozionale |
+  |---|---|---|---|---|---|
+  | Supervisione | opus-5 | 3h15 | 16,1 M | 99.915 | $54,10 |
+  | Fase 0 cloud (#11/#12/#14) | fable-5 → opus-5 | 1h30 | 63,1 M | 181.315 | $45,84 |
+  | └ di cui parte fable-5 | fable-5 | ~10 min | 1,3 M | 23.876 | $6,41 |
+  | Duplicato archiviato | opus-5 | 7 min | 2,4 M | 28.793 | $3,88 |
+  | Z8 / ENV-W (2 sessioni) | opus-5 | ~1h40 | — | — | non esposto |
+  | **Totale misurabile** | | | **81,6 M** | **310.023** | **$103,81** |
+
+- **Decisioni prese / cose imparate dai numeri**:
+  1. **Il costo è rilettura, non generazione**: 81,6 M di token letti dalla cache
+     contro 310 mila generati — rapporto 263 a 1. Ottimizzare la lunghezza delle
+     conversazioni vale molto più che scegliere un modello più economico.
+  2. **La sessione Fase 0 ha letto 63,1 M in un'ora e mezza**, contro i 16,1 M
+     della supervisione in tre ore e un quarto: quasi quattro volte tanto in metà
+     tempo, perché è rimasta viva attraverso sette cicli di CI con output di tool
+     voluminosi. Da qui la regola §7.3: dopo un push che innesca la CI si chiude
+     il turno, non si aspetta dentro la sessione.
+  3. **Il duplicato è costato $3,88 senza produrre nulla** — errore di
+     supervisione che ha generato la regola §3.8.
+  4. **fable-5 ha bruciato $6,41 in dieci minuti** per creare un branch e fare un
+     merge, poi ha esaurito il limite settimanale bloccando la sessione. Rapporto
+     valore/consumo sfavorevole per lavoro meccanico: da qui la tabella §7.
+  5. Le sessioni **bridge** (Claude CLI locale) non espongono `usage`: il consumo
+     di ENV-W non è misurabile da remoto. Va annotato come tale, non stimato.
+- **Test eseguiti**: nessuno (supervisione senza Docker).
+- **Non funziona / sospeso**: #10 e #13 in corso sulla Z8; tag `v0.0.1` (#15) in
+  attesa; RP-0 non eseguito; runner self-hosted e variabile `RUN_NIGHTLY` da
+  configurare.
+- **Prossimo passo per la sessione successiva**: alla consegna della Z8,
+  verificare il gate di v0.0.1 e chiedere all'owner il tag.
+- **Decisioni richieste all'owner**: nessuna nuova. Restano aperte: registrazione
+  del runner self-hosted `env-w` e tag `v0.0.1` quando il gate è verde.

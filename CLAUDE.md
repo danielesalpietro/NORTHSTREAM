@@ -102,9 +102,18 @@ Un file per fase del release train: `LOGBOOK_baseline.md`, `LOGBOOK_v0.0.1.md`,
 - **Fatto**: (con SHA dei commit)
 - **Decisioni prese**: (e perché — le alternative scartate valgono quanto le scelte)
 - **Test eseguiti**: comando → esito (PASS/FAIL/XFAIL), o "nessuno" — esplicito
+- **Costo della sessione**: modello, durata, token (cache read / output), costo
+  nozionale — da `get_session`. Per le sessioni **bridge** (Claude CLI locale)
+  il campo `usage` non è esposto: scrivere "non misurabile", mai stimare.
 - **Non funziona / sospeso**:
 - **Prossimo passo per la sessione successiva**: (una riga azionabile, non un tema)
 ```
+
+Il campo **Costo della sessione** serve a misurare lo sforzo del processo, non
+solo il prodotto: con l'abbonamento MAX il denaro è nozionale, ma i token
+consumati sono il proxy diretto del budget di rate limit, ed è l'unico modo per
+capire a posteriori quali tipi di lavoro sono cari e perché (v. §7). Prima
+misurazione e lezioni ricavate: entry del 26/08/2026 in `LOGBOOK_baseline.md`.
 
 Il logbook non si riscrive mai: solo append. È la memoria lunga del progetto.
 Quando una fase si chiude (tag), il logbook della fase si chiude con una entry

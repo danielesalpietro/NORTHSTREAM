@@ -1,0 +1,23 @@
+# CI override: replaces Ollama with a deterministic HTTP stub.
+#
+# Usage (together with the base stack and the addon):
+#   docker compose \
+#     -f docker-compose-northstream-ai.yml \
+#     -f docker-compose.addon.yml \
+#     -f bench/ci/mock-ollama.yml \
+#     up -d --build <services...>
+#
+# The stub answers /api/embeddings with vectors derived from the text hash and
+# /api/generate with an echo of the context. It makes the T0 pipeline tests
+# deterministic and GPU-free; it says nothing about answer quality, and no test
+# that runs against it may claim otherwise.
+---
+services:
+  ollama:
+    image: northstream/mock-ollama:ci
+    build: ./bench/ci/mock-ollama
+    container_name: northstream-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes: []

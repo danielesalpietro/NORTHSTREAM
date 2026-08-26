@@ -1,0 +1,86 @@
+# Nightly: the full T0 suite with real Granite models on ENV-W (HP Z8 + 3090).
+#
+# This workflow is ready but dormant: it needs a self-hosted runner labelled
+# [self-hosted, env-w], which only the owner can register. Until then the job
+# is gated on the repository variable RUN_NIGHTLY, so the schedule does not
+# queue runs nobody can serve.
+#
+# To enable it:
+#   1. register the runner on ENV-W with the labels 'self-hosted' and 'env-w'
+#   2. set the repository variable RUN_NIGHTLY to 'true'
+#
+# Defined in docs/piano_ricovero.md section 5.
+---
+name: ci-nightly
+
+on:
+  schedule:
+    # 02:30 UTC, after the working day on ENV-W.
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "T0 suite to run"
+        required: false
+        default: "full"
+        type: choice
+        options: [core, full]
+
+jobs:
+  nightly:
+    if: vars.RUN_NIGHTLY == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, env-w]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the full stack with the addon
+        run: ./start-addon.sh --gpu
+
+      - name: Pull the Granite models
+        run: |
+          docker exec northstream-ollama ollama pull "${OLLAMA_CHAT_MODEL:-granite4:1b}"
+          docker exec northstream-ollama ollama pull "${OLLAMA_EMBED_MODEL:-granite-embedding:30m}"
+
+      - name: Wait for Kafka Connect
+        run: |
+          for _ in $(seq 1 90); do
+            if curl -sf http://localhost:8083/connectors >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Kafka Connect did not come up in time" >&2
+          exit 1
+
+      - name: Register the Debezium CDC connector
+        run: |
+          status=$(curl -s -o /tmp/register.out -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' \
+            --data @connectors/postgres-source-connector.json \
+            http://localhost:8083/connectors)
+          echo "connector registration: HTTP $status"
+          [ "$status" = "201" ] || [ "$status" = "409" ]
+
+      - name: Run the T0 suite with real models
+        run: |
+          bench/t0/run.sh \
+            --suite "${{ github.event.inputs.suite || 'full' }}" \
+            --env envw \
+            --report "results/nightly-${{ github.run_id }}"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t0-nightly-report
+          path: results/
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose \
+            -f docker-compose-northstream-ai.yml \
+            -f docker-compose.addon.yml \
+            down -v

@@ -53,6 +53,27 @@ sets `decimal.handling.mode: double` so `NUMERIC` columns
 (`temperature_c`, `vibration_g`, `unit_price`, `total_amount`) stream as
 plain numbers instead of base64-encoded bytes.
 
+> **Restart the agent right after this step — otherwise the demo looks broken
+> for about five minutes.**
+>
+> ```bash
+> docker restart northstream-stream-agent
+> ```
+>
+> The agent subscribes to Kafka *by topic pattern* when it starts, and its
+> client refreshes cluster metadata only every 5 minutes. The CDC topics are
+> created by the step you just ran — that is, after the agent subscribed — so
+> until that window expires the agent does not know they exist: `/events` stays
+> empty and `/health` keeps reporting `buffered_events: 0` while the pipeline is
+> in fact working. Measured in CI: **4 minutes and 46 seconds** between
+> registering the connector and the first event reaching the agent.
+>
+> Restarting the agent makes it discover the topics immediately. The
+> alternative is to register the connector *before* starting the addon. This is
+> finding A-8 in [`review_tecnica.md`](review_tecnica.md); the real fix (a short
+> metadata refresh interval) lands in v0.0.4 — see
+> [issue #39](https://github.com/danielesalpietro/NORTHSTREAM/issues/39).
+
 ## 3. Pull the Ollama models (small, on purpose)
 
 IBM Granite, open-source and aligned with the watsonx narrative:
@@ -111,6 +132,51 @@ More example questions useful for the demo:
 "Which products are selling best in the EMEA region right now?"
 "Are there any temperature readings above 85 degrees in the last few minutes?"
 ```
+
+### How the retrieval really works (read this before presenting)
+
+Know this before someone in the room asks, because the honest answer is a good
+answer and being caught out is not.
+
+Retrieval in `stream-agent/app.py` is **two mechanisms stacked**, not pure
+semantic search:
+
+1. **A literal keyword boost.** `keyword_matches()` holds a hardcoded list of
+   the five site names the generator emits — `Plant-A`, `Plant-B`,
+   `Warehouse-1`, `Warehouse-2`, `Line-3`. When the question mentions one of
+   them, the most recent literal matches from the in-memory buffer are put at
+   the **front** of the context.
+2. **Semantic search in Qdrant**, which fills the remaining slots.
+
+So for the canonical demo question ("anomalies at Plant-B?") the first context
+line comes from the keyword path, not from the vector store. This was a
+deliberate choice: the embedding model of the default tier
+(`granite-embedding:30m`, 30M parameters) does not reliably rank a
+site-specific sensor event above unrelated `orders` events, and a live demo
+that depends on that ranking is a demo that eventually fails in front of a
+customer.
+
+What it means in practice:
+
+- **Say "retrieval", not "pure semantic RAG".** The pipeline is real —
+  CDC, Kafka, embeddings, vector store, grounded prompt — but the top hit for a
+  site question is a literal match.
+- **Ask about a site outside that list and quality drops visibly.** If someone
+  asks about a site the generator never emits, only the semantic path runs.
+  That is a fair question to invite, not one to avoid: it is precisely the
+  discussion about embedding size, hybrid search and payload filters that a
+  platform conversation should reach. Test `T0.10` in
+  [`bench/t0/`](../bench/) pins this behaviour, and it is expected to fail
+  until the boost is replaced.
+- **The fix is planned, not hidden.** The keyword boost is scheduled to be
+  replaced by a Qdrant payload filter (site plus a recency filter) in v0.0.4 —
+  see [`docs/piano_ricovero.md`](piano_ricovero.md), objective O5.3. Until then
+  it stays, declared.
+
+One more trade-off worth naming if the audience is technical: the connector
+sets `decimal.handling.mode: double`, which keeps `NUMERIC` columns readable in
+the stream instead of base64-encoded bytes — at the cost of representing money
+as an IEEE float. Fine for a demo, not what you would ship for financial data.
 
 ## 5b. The same demo, from Open WebUI
 

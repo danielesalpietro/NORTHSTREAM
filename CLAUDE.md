@@ -136,6 +136,16 @@ grezzi in `~/NORTHSTREAM-archive/<RUN_ID>/` — mai nel repo.
   Una sessione che non ha accesso ad alcun ambiente di esecuzione (es. sessione
   remota senza Docker) lo dichiara nel logbook e si limita a lavoro statico:
   niente claim di esito test non eseguiti.
+- **Accesso a ENV-W (Z8)**: raggiungibile via SSH **solo dalle sessioni locali
+  dell'owner** (chiave privata sul laptop dell'owner; IP pubblico dinamico, cambia
+  a discrezione dell'ISP). Le coordinate di connessione NON vanno mai committate
+  in questo repository (è pubblico): restano in un file locale dell'owner, fuori
+  repo. Le sessioni remote e la CI raggiungono ENV-W esclusivamente tramite il
+  **runner GitHub Actions self-hosted** registrato sulla Z8 (connessione outbound:
+  immune ai cambi di IP e non richiede distribuzione di chiavi) — workflow
+  `ci-nightly` con label `[self-hosted, env-w]`, esecuzione via schedule o
+  `workflow_dispatch`. Se il runner è offline, l'unica via è chiedere all'owner
+  di intervenire dalla sessione locale.
 
 ## 6. Checklist di chiusura sessione (obbligatoria, in ordine)
 

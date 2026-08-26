@@ -47,7 +47,8 @@ la prima azione della sessione è segnalarlo nel logbook, non ricostruirlo a mem
 | **Branch di lavoro** | `claude/project-plan-review-473nje` (review + piano + direttive; da mergiare in `develop` con v0.0.1) |
 | **Ultimo run T0** | mai eseguito — il harness `bench/` non esiste ancora (arriva con v0.0.1) |
 | **Prossima azione** | Fase 0, sub-issue in ordine: [#9](https://github.com/danielesalpietro/NORTHSTREAM/issues/9) tag baseline+merge → [#10](https://github.com/danielesalpietro/NORTHSTREAM/issues/10) collaudo in macchina → [#11](https://github.com/danielesalpietro/NORTHSTREAM/issues/11)–[#15](https://github.com/danielesalpietro/NORTHSTREAM/issues/15) |
-| **Blocchi aperti** | RP-0 (probe DinD su RunPod, issue #34) non ancora eseguito |
+| **Sessioni operative attive** | Fase 0 cloud (`session_01GaPWBapF7LMthmjyPoC9Cd`, opus-5): #11/#12/#14 · ENV-W Z8 (`session_012WiW8ep5PVnGmm7exagMDu`, bridge): #10 + tag baseline. Entrambe pushano su `release/v0.0.1` |
+| **Blocchi aperti** | RP-0 (probe DinD su RunPod, issue #34) non ancora eseguito · tag `v0.0.0-baseline` in attesa dalla Z8 · limite settimanale claude-fable-5 esaurito fino al ~28/08 (usare opus-5 o sonnet-5) |
 | **Tracking fasi** | Fase 0 [#3](https://github.com/danielesalpietro/NORTHSTREAM/issues/3) · Fase 1 [#4](https://github.com/danielesalpietro/NORTHSTREAM/issues/4) · Fase 2 [#5](https://github.com/danielesalpietro/NORTHSTREAM/issues/5) · Fase 3 [#6](https://github.com/danielesalpietro/NORTHSTREAM/issues/6) · Fase 4 [#7](https://github.com/danielesalpietro/NORTHSTREAM/issues/7) · Fase 5 [#8](https://github.com/danielesalpietro/NORTHSTREAM/issues/8) — ogni fase ha sub-issue collegate; una fase si apre solo col tag della precedente |
 | **Issue di riferimento** | [#2](https://github.com/danielesalpietro/NORTHSTREAM/issues/2) (review) · [#1](https://github.com/danielesalpietro/NORTHSTREAM/issues/1) (Norimberga: decisione in Fase 5, issue #36) |
 
@@ -75,6 +76,16 @@ la prima azione della sessione è segnalarlo nel logbook, non ricostruirlo a mem
    esporre nuovi servizi su `0.0.0.0` (target: `127.0.0.1`, da v0.0.2).
 7. **Lingua.** Documentazione di progetto (`docs/`, logbook, CHANGELOG) in italiano;
    codice, commenti nel codice e README in inglese (pubblico del repo).
+8. **Una sola sessione per scope.** Ogni fase (e ogni issue) ha una sola sessione
+   che la lavora, registrata nella riga "Sessioni operative attive" di §2. Prima
+   di creare una sessione per un lavoro già assegnato, **verificarne lo stato
+   reale**: una sessione ferma per limite di crediti non è morta — riprende da
+   sola quando l'owner le cambia modello, e nel frattempo una sostitutiva
+   creerebbe due sessioni che pushano sullo stesso branch. In caso di doppione:
+   sopravvive quella più avanti, l'altra si interrompe e archivia, e chi resta
+   viene allineata sullo stato che si è persa. Sessioni con scope diversi sullo
+   stesso branch (es. Fase 0 cloud + ENV-W) sono invece legittime: si coordinano
+   con `git pull --rebase` e con entry di logbook distinte.
 
 ## 4. Direttive di aggiornamento documentale — per ogni fase
 

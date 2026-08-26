@@ -65,7 +65,8 @@ jobs:
 
       - name: Run the T0 CI suite
         env:
-          RUN_ID: ci-smoke-${{ github.run_id }}
+          # RUN_ID is left to the harness so it follows the convention of
+          # docs/piano_ricovero.md section 3: <YYYYMMDD-HHMM>-<env>-<sha>.
           # Tighter budgets than the workstation defaults, so the whole suite
           # stays well inside the job timeout even when every wait is spent.
           NS_STACK_TIMEOUT: "240"

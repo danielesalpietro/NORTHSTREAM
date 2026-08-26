@@ -205,3 +205,33 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
      per attivare `ci-nightly` (issue #12).
   3. Conferma che `release/v0.0.1` resti aperto fino al run baseline (#13):
      questa sessione **non** ha taggato v0.0.1, come da scope.
+
+### Aggiornamento di chiusura (stessa sessione) — CI verde
+
+- **Esito finale CI**: `ci-static` **verde** e `ci-smoke` **verde** sul commit
+  `c3c517d` (run [33008193653](https://github.com/danielesalpietro/NORTHSTREAM/actions/runs/33008193653)):
+  `{"PASS": 4, "XFAIL": 2}` → `RESULT: OK (no regression)`. Report committato in
+  `docs/runs/ci-smoke-33008193653.md`; il run rosso iniziale resta documentato in
+  `docs/runs/ci-smoke-33006019554.md` perché contiene le prime misure di A-3/A-5.
+  Definition of done della issue #12 raggiunta: entrambi i workflow verdi.
+- **Terzo difetto corretto** (`c3c517d`), questa volta **non** del harness:
+  con la suite finalmente veloce è emerso che lo `stream-agent` non vede i topic
+  creati dopo la propria iscrizione per pattern, perché `kafka-python` rinfresca
+  i metadata ogni 5 minuti (`metadata_max_age_ms` di default). Misurato in CI:
+  **4 min 46 s** tra registrazione del connettore e primo evento osservato
+  dall'agent. Nei run precedenti era mascherato dai 420 s che T0.2 sprecava.
+  In v0.0.1 **non si tocca il comportamento**: ci-smoke aspetta esplicitamente il
+  primo evento prima di asserire sulla freschezza, e la misura è registrata.
+- **Nuovo finding proposto (decisione all'owner)**: il ritardo di scoperta topic
+  colpisce anche la demo dal vivo, perché README e `docs/demo-script.md`
+  prescrivono proprio l'ordine "stack su → registra connettore": chi segue le
+  istruzioni può vedere `/events` vuoto per minuti e concludere che la pipeline
+  non funzioni. Non è nella lista della review (§3.2 non lo cita). Proposta:
+  aprirlo come finding A-8 e trattarlo in Fase 3 insieme ad A-4, con rimedio
+  `metadata_max_age_ms` basso o iscrizione esplicita ai topic con retry.
+  **Non implementato in questa sessione**: fuori dallo scope di v0.0.1.
+- **Nota metodologica per le sessioni remote**: in questo ambiente i `sleep` in
+  background **non consumano tempo reale** (10 sleep da ~500 s sono passati in
+  ~15 minuti di orologio). Per attendere davvero la CI serve un'attesa in
+  foreground (`python3 -c "import time; time.sleep(N)"`, verificata con `date`).
+  Chi riprende il lavoro da una sessione remota non si fidi dei timer in background.

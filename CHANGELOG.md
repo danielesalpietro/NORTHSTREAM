@@ -30,6 +30,10 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
   self-hosted `[self-hosted, env-w]`, schedule + `workflow_dispatch`, dormiente
   finché l'owner non registra il runner e la variabile `RUN_NIGHTLY` (issue #12).
 - `.yamllint.yml` — configurazione del linter YAML usata da ci-static.
+- `docs/runs/` — report dei run T0 eseguiti in CI: `ci-smoke-33006019554.md`
+  (primo run, rosso, con le prime misure di A-3 e A-5) e `ci-smoke-33008193653.md`
+  (primo run verde: 4 PASS + 2 XFAIL, più la misura del ritardo di scoperta
+  topic dell'agent: 4 min 46 s).
 - `.gitignore` — esclude `results/` (gli output grezzi dei run non stanno nel repo).
 - `docs/review_tecnica.md` — review tecnica critica della baseline (issue #2).
 - `docs/piano_ricovero.md` — piano di ricovero verso v0.1.0-beta1 (O1–O7, suite T0/EVAL/soak, release train).

@@ -193,7 +193,37 @@ sessione successiva cieca: se riprendi un lavoro senza entry di chiusura, la pri
 azione è ricostruire lo stato dai commit e scrivere tu l'entry mancante, marcata
 "(ricostruita a posteriori)".
 
-## 7. Riferimenti rapidi
+## 7. Scelta del modello ed economia dei token
+
+L'owner ha delegato alla supervisione la scelta del modello per ogni sessione
+operativa (26/08/2026). Criterio: **il modello più economico che non thrasha** —
+una sessione che gira a vuoto costa più di un modello caro che risolve al primo
+colpo.
+
+| Tipo di lavoro | Modello | Dove |
+|---|---|---|
+| Configurazione meccanica, già specificata dal piano, verificabile in CI | `claude-sonnet-5` | Fase 1 (listener Kafka, pin immagini, binding, preflight), Fase 2 (profiles, `mem_limit`, catalogo Trino) |
+| Progettazione su codice delicato, con gate di qualità da interpretare | `claude-opus-5` | Fase 3 (retrieval, point-id, recency, `/health`), Fase 5 (lettura della matrice EVAL, decisioni di release) |
+| Integrazione fiddly con prodotto poco conosciuto | `claude-sonnet-5`, escalation a `claude-opus-5` se si blocca due volte sullo stesso punto | Fase 4 (ingestion OpenMetadata) |
+| Qualunque cosa | mai `claude-fable-5` senza richiesta esplicita dell'owner | costa il doppio di opus-5 per token |
+
+**Il driver di costo dominante non è il modello: è la lunghezza della sessione.**
+La sessione Fase 0 ha totalizzato 63 milioni di token di lettura da cache perché
+è rimasta viva attraverso sette cicli di CI, rileggendo l'intera conversazione a
+ogni turno. Da qui quattro regole che pesano più della scelta del modello:
+
+1. **Scope stretto**: una sessione per issue o per piccolo gruppo di issue
+   affini, non per fase intera.
+2. **Briefing completo all'avvio**: ogni cosa che la sessione deve scoprire da
+   sola diventa contesto che poi rilegge a ogni turno successivo.
+3. **Non restare vivi ad aspettare**: dopo un push che innesca la CI, chiudere
+   il turno. Un check successivo rilegge solo ciò che serve, invece di tenere in
+   vita una conversazione che cresce.
+4. **Prima di creare una sessione, verificare se una esistente può riprendere**
+   (§3.8): una sessione ferma per limite di crediti riparte con un cambio
+   modello, e ricrearla raddoppia il costo del contesto già pagato.
+
+## 8. Riferimenti rapidi
 
 - Stack base: `docker compose -f docker-compose-northstream-ai.yml up -d` ·
   addon: `./start-addon.sh` (`--gpu` per passthrough) · connettore CDC:

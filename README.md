@@ -16,6 +16,15 @@ It is inspired by the architectural concepts behind:
 
 > NORTHSTREAM is not a production platform. It is a technical playground for learning, presales storytelling, demos, architecture validation, and internal enablement.
 
+> **What is actually wired today.** One data path runs end to end:
+> PostgreSQL → Debezium CDC → Kafka → Stream Context Agent → Qdrant → local LLM.
+> Flink, Apicurio, MinIO, Trino and OpenMetadata start with the stack and are
+> useful to show and discuss, but nothing writes to them or reads from them
+> yet: they are available extensions, not steps of the current flow. The
+> [Layer status](#layer-status) table below says which is which, service by
+> service. Work in progress is tracked in
+> [`docs/piano_ricovero.md`](docs/piano_ricovero.md) (in Italian).
+
 ---
 
 ## Why NORTHSTREAM?
@@ -79,44 +88,56 @@ NORTHSTREAM
 
 ## Data Flow Storyline
 
+This is the path an event actually takes today, from an `INSERT` to a grounded
+answer:
+
 ```text
-PostgreSQL
+PostgreSQL (operational source)
    |
    | CDC with Debezium / Kafka Connect
    v
-Apache Kafka
+Apache Kafka  --------> Kafka UI (topics, messages, connectors)
    |
-   +--> Schema Registry
-   |
-   +--> Apache Flink for stream processing
-   |
-   +--> MinIO for lakehouse-style object storage
-   |
-   +--> Trino for SQL access
-   |
-   +--> OpenMetadata for catalog, governance and lineage
-   |
-   +--> Stream Context Agent (addon): embeds live events with Ollama
-   |    and indexes them in Qdrant for retrieval-augmented answers
-   |
+   | consumed by the Stream Context Agent (addon)
    v
-Ollama + Open WebUI
-Local AI assistant / chat interface
+Qdrant (embeddings of live events)
+   |
+   | retrieved as context at question time
+   v
+Ollama (small local LLM) + Open WebUI
+Grounded answers about what just happened in the stream
 ```
 
 A typical demo scenario is:
 
-1. Insert or update records in the PostgreSQL operational database.
+1. Insert or update records in the PostgreSQL operational database (the
+   `data-generator` does this continuously).
 2. Capture changes through Debezium CDC.
 3. Publish events into Kafka topics.
 4. Observe topics and messages from Kafka UI.
-5. Process or enrich event streams with Flink.
-6. Persist raw or curated data into MinIO.
-7. Query data with Trino.
-8. Register and document assets in OpenMetadata.
-9. Use Ollama and Open WebUI as the local AI interaction layer.
-10. Use the Stream Context Agent to ground a small local LLM in live stream
-    data and compare grounded vs. ungrounded answers.
+5. Watch the Stream Context Agent consume, embed and index those events.
+6. Ask the same question with and without stream context, and compare the two
+   answers side by side.
+
+### Layer status
+
+The stack starts more services than the flow above uses. They are worth
+showing — they make the architecture discussion concrete — but the README
+would be lying if it described them as part of the pipeline:
+
+| Layer | Service | Status |
+|---|---|---|
+| Data integration / CDC | PostgreSQL, Debezium Connect | **Wired** — the source of every event |
+| Data in motion | Kafka, Kafka UI | **Wired** — the backbone the agent consumes |
+| AI / chat with data | Ollama, Open WebUI | **Wired** — answers the demo question |
+| Stream Context Agent (addon) | qdrant, stream-agent, data-generator | **Wired** — the RAG loop over live events |
+| Schema governance | Apicurio Registry | **Not wired** — Debezium uses `JsonConverter` with schemas disabled, so no schema is ever registered |
+| Stream processing | Flink JobManager, TaskManager | **Not wired** — the cluster runs, no job is submitted by this repository |
+| Lakehouse foundation | MinIO, Trino | **Not wired** — the buckets are created and stay empty; Trino starts without catalogs |
+| Governance | OpenMetadata, Elasticsearch | **Not wired** — the catalog runs empty, no ingestion is configured |
+
+Connecting these layers one at a time, each with a working demo as the
+definition of done, is the subject of the [Roadmap](#roadmap).
 
 ---
 
@@ -125,7 +146,7 @@ A typical demo scenario is:
 | Layer | Service | Purpose | Default URL / Port |
 |---|---|---|---|
 | Landing Page | landing-page | Overview page linking to every service in the stack | [NORTHSTREAM Landing](http://localhost:8000) |
-| Streaming | Kafka | Event streaming backbone | `localhost:9092` |
+| Streaming | Kafka | Event streaming backbone | in-network only: `kafka:9092` (see note below) |
 | Streaming UI | Kafka UI | Kafka topics, consumers, connectors visibility | [Kafka UI](http://localhost:8088) |
 | Schema Governance | Apicurio Registry | Schema registry compatible service | [Schema Registry](http://localhost:8081) |
 | Operational Source | PostgreSQL | Source transactional database | `localhost:5432` |
@@ -141,6 +162,16 @@ A typical demo scenario is:
 | Vector Store | Qdrant | Semantic index over live stream events | [Qdrant](http://localhost:6333) |
 | Stream Context Agent | stream-agent | Grounds a small Ollama model in real-time Kafka/CDC events | [Stream Agent API](http://localhost:8500) |
 | Synthetic Data | data-generator | Continuously produces realistic orders and sensor events | (no UI, writes to PostgreSQL) |
+
+> **Note on the Kafka endpoint.** The broker advertises `PLAINTEXT://kafka:9092`,
+> a name that only resolves inside the Docker network. Port 9092 is published,
+> but a client on the host bootstraps successfully and then receives metadata
+> pointing at `kafka:9092`, which it cannot reach — so host tools such as
+> `kcat` or `kafka-console-consumer` do not work against it today. Consume from
+> inside a container (`docker exec northstream-kafka kafka-console-consumer.sh
+> --bootstrap-server kafka:9092 --topic northstream.public.sensor_readings`) or
+> use Kafka UI. A second, host-advertised listener is planned; the behaviour is
+> pinned by test `T0.6` in [`bench/t0/`](bench/).
 
 ---
 
@@ -190,7 +221,13 @@ cp examples/recommended/.env .env
 ```
 
 Without a `.env` file, the stack defaults to the Recommended tier
-(`granite4:1b` / `granite-embedding:30m`).
+(`granite4:1b` / `granite-embedding:30m`). The repository ships
+[`.env.example`](.env.example) as a template — `.env` itself is git-ignored, so
+switching tier locally never shows up as a repository change:
+
+```bash
+cp .env.example .env
+```
 
 ### GPU passthrough (optional)
 
@@ -217,8 +254,8 @@ Docker Desktop setting is needed.
 Clone the repository:
 
 ```bash
-git clone <your-repository-url>
-cd northstream
+git clone https://github.com/danielesalpietro/NORTHSTREAM.git
+cd NORTHSTREAM
 ```
 
 Start the platform:
@@ -388,8 +425,6 @@ foundation models behind watsonx.ai, and are a natural fit for a
 watsonx-inspired lab like NORTHSTREAM. Sizes below are as published on
 [Ollama](https://ollama.com/library/granite4):
 
-| Tag | Parameters | Download size | Notes |
-|---|---|---|---|
 | Tag | Parameters | Download size | Tier |
 |---|---|---|---|
 | `granite4:350m` | 350M | 708 MB | Minimal |
@@ -518,23 +553,32 @@ below. The others remain open for future work:
 
 ---
 
-## Suggested Repository Layout
+## Repository Layout
+
+What the repository actually contains:
 
 ```text
 northstream/
 |
 +-- docker-compose-northstream-ai.yml
 +-- docker-compose.addon.yml
++-- docker-compose.gpu.yml
 +-- README.md
++-- CHANGELOG.md
++-- LICENSE
 +-- index.html
++-- dashboard.html
++-- start-addon.sh
++-- start-addon.ps1
++-- register-connector.sh
++-- register-connector.ps1
++-- demo-compare.sh
++-- demo-compare.ps1
++-- .env.example
+|
 +-- init/
 |   +-- postgres/
 |       +-- 001-init-sales-db.sql
-|
-+-- trino/
-|   +-- catalog/
-|       +-- minio.properties
-|       +-- postgres.properties
 |
 +-- connectors/
 |   +-- postgres-source-connector.json
@@ -549,15 +593,26 @@ northstream/
 |   +-- requirements.txt
 |   +-- generate_events.py
 |
++-- bench/
+|   +-- README.md
+|   +-- t0/
+|   +-- ci/
+|
 +-- docs/
-|   +-- architecture.md
 |   +-- demo-script.md
-|   +-- roadmap.md
+|   +-- piano_ricovero.md
+|   +-- review_tecnica.md
+|   +-- logbook/
 |
 +-- examples/
-    +-- sample-events.json
-    +-- sample-queries.sql
+    +-- minimal/
+    +-- recommended/
+    +-- optimal/
 ```
+
+Every path above is checked against the filesystem by test `T0.12`
+([`bench/t0/lib/doc_truth.py`](bench/t0/lib/doc_truth.py)), which runs on every
+push: this list cannot drift from reality without turning CI red.
 
 ---
 
@@ -565,8 +620,8 @@ northstream/
 
 A concise demo narrative:
 
-> NORTHSTREAM shows how operational data can become real-time, governed and AI-ready.  
-> It starts with transactional data in PostgreSQL, captures changes through Debezium, streams them through Kafka, applies schema governance, enables stream processing with Flink, stores data in an object-storage-based lakehouse, exposes it through Trino, documents it in OpenMetadata and finally makes it available to a local AI/chat interface — including, via the Stream Context Agent addon, a small local LLM that answers questions grounded in live stream events rather than from static or absent context.
+> NORTHSTREAM shows how operational data can become real-time and AI-ready.  
+> It starts with transactional data in PostgreSQL, captures changes through Debezium, streams them through Kafka, and feeds them — via the Stream Context Agent addon — to a small local LLM that answers questions grounded in live stream events rather than from static or absent context. The lakehouse, stream-processing and governance layers are present in the stack as the next conversations to have, not as steps this pipeline already takes.
 
 ---
 
@@ -635,13 +690,8 @@ Before adapting it to a real environment, review at least:
 
 ## License
 
-Choose the license that best fits your intended usage.
-
-Common options:
-
-- MIT License for permissive sharing
-- Apache License 2.0 for permissive sharing with explicit patent terms
-- Internal-only license for private enterprise enablement
+NORTHSTREAM is released under the **MIT License** — see [`LICENSE`](LICENSE)
+for the full text.
 
 ---
 

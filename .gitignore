@@ -5,3 +5,7 @@ results/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Local model selection: copy .env.example to .env and adjust.
+# Keeping it untracked means switching tier never dirties the working tree.
+.env

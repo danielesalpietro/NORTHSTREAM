@@ -36,7 +36,33 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 - `CLAUDE.md` — direttive vincolanti di onboarding e chiusura per ogni sessione (O1.2, anti-dispersione memoria).
 - `CHANGELOG.md`, `docs/logbook/LOGBOOK_baseline.md` — avvio della disciplina documentale per fase.
 
+### Changed
+- README: storyline accorciata al flusso realmente implementato
+  (Postgres → Debezium → Kafka → agent → Qdrant → LLM) e nuova tabella
+  "Layer status" che dichiara quali servizi sono collegati e quali no
+  (O2.1, review §2 e §4.4, issue #14). Progression test: T0.12.
+- README: "Suggested Repository Layout" → "Repository Layout", allineato ai file
+  che esistono davvero (D-1); rimossi i path mai esistiti (`trino/catalog/*`,
+  `docs/architecture.md`, `docs/roadmap.md`, `examples/sample-*`) e aggiunti
+  quelli omessi (`docker-compose.gpu.yml`, `dashboard.html`, script, `bench/`).
+- README: la tabella servizi non pubblicizza più `localhost:9092` come endpoint
+  Kafka utilizzabile e spiega perché il broker è raggiungibile solo dalla rete
+  Docker, con il test T0.6 che ne fissa il comportamento (P-1, parte doc).
+- README: sezione License riscritta su MIT, coerente con il file `LICENSE`
+  (D-2); rimosso il placeholder `<your-repository-url>` dal Quick Start.
+- README: "Demo Narrative" riscritta senza i passaggi (Flink, lakehouse, Trino,
+  OpenMetadata) che la pipeline non esegue (D-1).
+- `docs/demo-script.md`: nuova sezione "How the retrieval really works" che
+  dichiara il boost keyword su `KNOWN_SITES`, i suoi limiti sui siti fuori lista
+  e la sostituzione prevista in v0.0.4, più la nota sul trade-off
+  `decimal.handling.mode: double` (D-3, A-1 dichiarato, issue #14).
+- `.env` non è più tracciato: diventa `.env.example` e `.env` entra in
+  `.gitignore` (P-8, O3.5). Verificato che l'output di `docker compose config`
+  resta identico: i default del compose coincidono coi valori del vecchio `.env`.
+
 ### Fixed
+- README: rimossa la doppia riga di header nella tabella dei modelli Granite,
+  che rompeva il rendering (D-2).
 - `docker-compose-northstream-ai.yml`: rimossi spazi a fine riga e aggiunta la
   newline finale (igiene per yamllint in ci-static). Cambiamento di sola
   formattazione: l'output di `docker compose config` è byte-identico a prima.

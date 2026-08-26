@@ -112,6 +112,51 @@ More example questions useful for the demo:
 "Are there any temperature readings above 85 degrees in the last few minutes?"
 ```
 
+### How the retrieval really works (read this before presenting)
+
+Know this before someone in the room asks, because the honest answer is a good
+answer and being caught out is not.
+
+Retrieval in `stream-agent/app.py` is **two mechanisms stacked**, not pure
+semantic search:
+
+1. **A literal keyword boost.** `keyword_matches()` holds a hardcoded list of
+   the five site names the generator emits — `Plant-A`, `Plant-B`,
+   `Warehouse-1`, `Warehouse-2`, `Line-3`. When the question mentions one of
+   them, the most recent literal matches from the in-memory buffer are put at
+   the **front** of the context.
+2. **Semantic search in Qdrant**, which fills the remaining slots.
+
+So for the canonical demo question ("anomalies at Plant-B?") the first context
+line comes from the keyword path, not from the vector store. This was a
+deliberate choice: the embedding model of the default tier
+(`granite-embedding:30m`, 30M parameters) does not reliably rank a
+site-specific sensor event above unrelated `orders` events, and a live demo
+that depends on that ranking is a demo that eventually fails in front of a
+customer.
+
+What it means in practice:
+
+- **Say "retrieval", not "pure semantic RAG".** The pipeline is real —
+  CDC, Kafka, embeddings, vector store, grounded prompt — but the top hit for a
+  site question is a literal match.
+- **Ask about a site outside that list and quality drops visibly.** If someone
+  asks about a site the generator never emits, only the semantic path runs.
+  That is a fair question to invite, not one to avoid: it is precisely the
+  discussion about embedding size, hybrid search and payload filters that a
+  platform conversation should reach. Test `T0.10` in
+  [`bench/t0/`](../bench/) pins this behaviour, and it is expected to fail
+  until the boost is replaced.
+- **The fix is planned, not hidden.** The keyword boost is scheduled to be
+  replaced by a Qdrant payload filter (site plus a recency filter) in v0.0.4 —
+  see [`docs/piano_ricovero.md`](piano_ricovero.md), objective O5.3. Until then
+  it stays, declared.
+
+One more trade-off worth naming if the audience is technical: the connector
+sets `decimal.handling.mode: double`, which keeps `NUMERIC` columns readable in
+the stream instead of base64-encoded bytes — at the cost of representing money
+as an IEEE float. Fine for a demo, not what you would ship for financial data.
+
 ## 5b. The same demo, from Open WebUI
 
 `stream-agent` also exposes an OpenAI-compatible API (`/v1/models`,

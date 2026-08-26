@@ -9,13 +9,15 @@ forma compressa della fase, e alla chiusura diventa l'ESITO FASE.
 
 ---
 
-## SINTESI DI FASE — aggiornata al 2026-08-26, 21:45 UTC
+## SINTESI DI FASE — aggiornata al 2026-08-26, 22:05 UTC
 
 **Dove siamo**: Fase 0 completa sul piano tecnico. Tag `v0.0.0-baseline` → `5eb456a`
 pubblicato. Su `release/v0.0.1`: harness `bench/t0/` (12 test), tre workflow CI
 (`ci-static` e `ci-smoke` **verdi**), fix documentali (T0.12 flippato), collaudo in
 macchina e **run T0 di riferimento archiviato**. Resta solo #15: il tag `v0.0.1`,
-azione dell'owner.
+azione dell'owner. **ENV-W pubblica di nuovo su GitHub** (blocco risolto, v. sotto);
+lo stack sulla Z8 è **spento** con i volumi conservati; **P-9 è confermato per
+prova**; il runner self-hosted `env-w` è **preparato ma non ancora registrato**.
 
 **Decisioni prese, con il perché**
 - **Storyline README accorciata, non costruita**: i layer non collegati (Flink,
@@ -43,6 +45,13 @@ azione dell'owner.
 - **`NS_RECENCY_SECONDS` = 300 di default** e tetto per-test derivato dai
   parametri del test: un test che coi soli default non può finire è un test che
   non flipperà mai da solo.
+- **`RUN_NIGHTLY` si imposta separatamente dalla registrazione del runner, e di
+  proposito** (9ª entry): la variabile *è* l'interruttore della nightly, non un
+  dettaglio di configurazione. `ci-nightly` ha `schedule: cron "30 2 * * *"` e il
+  gate `if: vars.RUN_NIGHTLY == 'true'`, quindi impostarla accende la nightly
+  della notte stessa; e il suo ultimo step è `docker compose ... down -v`, che
+  **cancella `ollama_data`**. Registrare il runner e accendere la nightly sono
+  due decisioni distinte e vanno prese distintamente.
 
 **Numeri misurati**
 - **Run di riferimento** `20260826-2053-envw-5eb456a` (ENV-W, modelli reali,
@@ -55,19 +64,33 @@ azione dell'owner.
 - **XPASS di T0.10 spiegato**: con 61 punti in collection e `top_k=5` il match
   letterale entra comunque; il test dipende dalla dimensione del corpus → issue
   #40, da rafforzare prima che il suo esito significhi qualcosa.
+- **P-9 confermato su clone pulito** (9ª entry): i tre script del Quick Start sono
+  `100644` in git e `./start-addon.sh --help` termina con **exit 126**,
+  `Permission denied`. Non è un file mancante (sarebbe 127): manca il bit di
+  esecuzione. È il primo comando del Quick Start.
 - RSS totale dello stack full su ENV-W: **9,52 GiB** (non è una verifica di P-5).
 - Costo del processo: ~81,6 M token letti da cache contro ~310 mila generati
   (263:1). Il costo è rilettura, non generazione.
 
 **Aperto**
-- #15 (tag `v0.0.1`) — unica azione mancante, spetta all'owner.
-- ENV-W non può pubblicare su GitHub (nessuna credenziale): i suoi commit li
-  pubblica l'owner.
-- #40 (T0.10 fragile), P-9 (script non eseguibili su clone pulito), RP-0,
-  runner self-hosted `env-w` + `RUN_NIGHTLY`.
+- #15 (tag `v0.0.1`) — unica azione mancante per chiudere la fase, spetta all'owner.
+- **Runner self-hosted `env-w`**: tarball estratto e pronto in
+  `~/actions-runner-northstream/` sulla Z8, **registrazione da eseguire**
+  (comando nella 9ª entry). `RUN_NIGHTLY` **volutamente non impostata**.
+- #40 (T0.10 fragile), **P-9 (confermato, da formalizzare e assegnare a v0.0.2)**,
+  RP-0.
+- **Teardown distruttivo di `ci-nightly`**: `down -v` a fine job cancella
+  `ollama_data` a ogni nightly. Da valutare in v0.0.2 prima di accendere la nightly.
 
-**Prossimo passo**: l'owner appone il tag `v0.0.1`; poi si apre la Fase 1 (v0.0.2)
-con i progression test T0.6 (doppio listener Kafka) come primo obiettivo.
+**Risolto rispetto alla testa precedente**
+- **ENV-W può di nuovo pubblicare su GitHub**: `gh auth status` → autenticato come
+  `danielesalpietro` (scope `repo`), `ssh -T git@github.com` → autenticazione OK,
+  `git push --dry-run` → exit 0. Il blocco che rendeva ENV-W «un ambiente che
+  misura ma non pubblica» non c'è più.
+
+**Prossimo passo**: l'owner appone il tag `v0.0.1`; in parallelo registra il runner
+`z8-env-w` (#12). Poi si apre la Fase 1 (v0.0.2) con i progression test T0.6
+(doppio listener Kafka) come primo obiettivo, e con P-9 nello scope.
 
 ---
 
@@ -730,3 +753,124 @@ con i progression test T0.6 (doppio listener Kafka) come primo obiettivo.
   (ci-static + ci-smoke, run di riferimento archiviato, T0.12 flippato). Resta
   solo il tag `v0.0.1` (#15), che appone l'owner.
 - **Decisioni richieste all'owner**: nessuna nuova da parte mia.
+
+## 2026-08-26 (9ª entry) — ENV-W (HP Z8 G4) — Claude Code, sessione bridge schedulata (supervisione per conto dell'owner)
+
+- **Obiettivo della sessione**: tre azioni circoscritte, senza onboarding completo:
+  (1) registrare il runner GitHub Actions self-hosted `env-w` per attivare
+  `ci-nightly` (#12); (2) verificare per prova il finding proposto **P-9**;
+  (3) spegnere lo stack conservando i volumi.
+
+- **Fatto**:
+  - **P-9 confermato per misura** (punto 2) — evidenza integrale in
+    "Test eseguiti". Pronto da formalizzare come finding.
+  - **Stack spento** (punto 3): `down` **senza `-v`**. 19 container rimossi, rete
+    `wap-northstream-lab_default` rimossa, **tutti e 8 i volumi
+    `wap-northstream-lab_*` intatti** — `ollama_data` compreso. 23 volumi sulla
+    macchina prima, 23 dopo. RAM: da ~10 GiB a 8,7 GiB usati su 235.
+  - **Runner: preparato, non registrato** (punto 1) — v. "Non funziona / sospeso".
+  - Nessun commit di codice. Oltre a questa entry e alla testa del logbook, ho
+    aggiornato la riga **Blocchi aperti** di `CLAUDE.md` §2 (obbligo di §6.4):
+    diceva ancora che ENV-W non pubblica — falso da questa sessione — e dava P-9
+    per "proposto".
+
+- **Decisioni prese**:
+  - **`RUN_NIGHTLY` NON impostata a `true`, deliberatamente.** È la decisione che
+    conta di questa sessione. La richiesta conteneva
+    `gh variable set RUN_NIGHTLY --body true` e, poche righe sotto,
+    «**non lanciare la nightly stasera**: serve solo che il runner esista». Le due
+    istruzioni non possono valere insieme: `ci-nightly` ha
+    `schedule: cron "30 2 * * *"` e il gate `if: vars.RUN_NIGHTLY == 'true'`,
+    quindi impostare la variabile alle 22:0x UTC **è** schedulare la nightly per
+    le 02:30 UTC di stanotte, fra ~4 ore e mezza. E l'ultimo step di `ci-nightly`
+    è `docker compose ... down -v`: la nightly avrebbe cancellato `ollama_data`,
+    cioè il danno preciso da cui il punto 3 mette in guardia («costringerebbe a
+    riscaricare i modelli Granite»). Fra le due letture ho tenuto l'intento, che
+    è dichiarato due volte e senza ambiguità (runner sì, nightly no), e ho
+    lasciato la variabile all'owner. Il costo dell'asimmetria è a favore di
+    questa scelta: accendere la variabile è un comando da cinque secondi,
+    ricaricare i modelli Granite no.
+  - **Runner estratto dal tarball già presente sulla Z8** invece che dall'URL
+    indicato: `releases/latest/download/actions-runner-linux-x64.tar.gz` non
+    esiste — gli asset di `actions/runner` sono versionati — e avrebbe dato 404.
+    Ho usato `~/actions-runner/actions-runner-linux-x64-2.336.0.tar.gz`, la stessa
+    versione del runner `vMemoryFabric` che su questa macchina funziona, evitando
+    anche un download da 226 MB.
+  - **Il runner dell'altro repository non è stato toccato**: directory dedicata
+    `~/actions-runner-northstream/`, e a fine sessione
+    `actions.runner.danielesalpietro-vMemoryFabric.berlin-3eie.service` è
+    verificato ancora `active`.
+  - **`down` eseguito con i due file indicati e non con i tre di avvio**: lo stack
+    era stato avviato anche con `docker-compose.gpu.yml`, ma il nome progetto è
+    pinnato da `name: wap-northstream-lab` dentro il compose, quindi i due file
+    colpiscono comunque il progetto giusto. Verificato con `--dry-run` prima di
+    eseguire, invece che assunto.
+
+- **Test eseguiti**:
+  - **P-9 → CONFERMATO.** Clone pulito (`git clone --depth 1` di `develop`):
+    ```
+    $ ls -l start-addon.sh register-connector.sh demo-compare.sh
+    -rw-rw-r-- 1 admin admin 311 Aug 26 21:52 demo-compare.sh
+    -rw-rw-r-- 1 admin admin 360 Aug 26 21:52 register-connector.sh
+    -rw-rw-r-- 1 admin admin 437 Aug 26 21:52 start-addon.sh
+
+    $ ./start-addon.sh --help
+    /bin/bash: line 1: ./start-addon.sh: Permission denied
+    exit=126
+    ```
+    `git ls-files -s` sugli stessi path: `100644` per tutti e tre, contro
+    `100755` di `bench/t0/run.sh`. **exit 126, non 127**: il file esiste, manca il
+    bit di esecuzione — la diagnosi del finding è esatta. Colpisce chiunque segua
+    il Quick Start del README da zero, ed è il **primo** comando della sequenza.
+  - `docker compose -f docker-compose-northstream-ai.yml -f docker-compose.addon.yml down`
+    → exit 0. Verifiche successive: `docker compose ls` → vuoto;
+    `docker ps -a --filter label=com.docker.compose.project=wap-northstream-lab`
+    → vuoto; `docker volume ls | grep wap-northstream-lab` → 8 volumi presenti.
+  - `ssh -T git@github.com` → autenticato come `danielesalpietro`;
+    `git push --dry-run origin local/release-v0.0.1:release/v0.0.1` → exit 0.
+    **Il blocco "ENV-W non pubblica" è superato** (era il blocco n.1 della testa).
+  - Nessun run T0: fuori scope, e lo stack è stato spento come richiesto.
+
+- **Costo della sessione**: non misurabile (sessione bridge, `usage` non esposto).
+
+- **Non funziona / sospeso**:
+  - **Punto 1 non completato: `./config.sh` è stato bloccato dal classificatore di
+    auto-mode della CLI**, non da GitHub e non per un problema di credenziali (il
+    token di registrazione è ottenibile: `gh` ha lo scope `repo`). In una sessione
+    schedulata non c'è nessuno che possa approvare il prompt, e non ho aggirato il
+    blocco. Stato lasciato: `~/actions-runner-northstream/` con il runner 2.336.0
+    estratto e pronto; **nessuna registrazione presso GitHub**
+    (`gh api .../actions/runners` → lista vuota), **nessun servizio installato**,
+    nessun effetto sul repository. Comando esatto per completare: v. "Decisioni
+    richieste all'owner".
+  - `RUN_NIGHTLY` resta non impostata per scelta: finché lo è, `ci-nightly` è
+    dormiente anche a runner registrato — il gate salta il job e lo schedule non
+    accoda run che nessuno serve.
+  - Restano aperti e fuori dal mio scope: #40 (T0.10 fragile), RP-0, #15 (tag).
+
+- **Prossimo passo per la sessione successiva**: far completare all'owner la
+  registrazione del runner (due comandi, sotto) e solo dopo — quando si vuole
+  davvero la prima nightly — impostare `RUN_NIGHTLY`.
+
+- **Decisioni richieste all'owner**:
+  1. **Registrare il runner** dalla propria sessione sulla Z8 (tarball già pronto,
+     nessun download necessario):
+     ```
+     cd ~/actions-runner-northstream
+     ./config.sh --url https://github.com/danielesalpietro/NORTHSTREAM \
+       --token "$(gh api -X POST repos/danielesalpietro/NORTHSTREAM/actions/runners/registration-token --jq .token)" \
+       --name z8-env-w --labels env-w --unattended
+     sudo ./svc.sh install && sudo ./svc.sh start
+     ```
+     Verifica attesa (`z8-env-w`, *online/idle*, label `env-w`):
+     ```
+     gh api repos/danielesalpietro/NORTHSTREAM/actions/runners \
+       --jq '.runners[] | {name,status,labels:[.labels[].name]}'
+     ```
+  2. **`RUN_NIGHTLY`** (`gh variable set RUN_NIGHTLY --body true`): da eseguire
+     **di proposito**, sapendo che accende la nightly delle 02:30 UTC successive.
+  3. **Teardown di `ci-nightly`**: valutare se il `down -v` finale debba restare.
+     Così com'è, ogni nightly cancella `ollama_data` e riscarica i modelli Granite
+     al run successivo. Candidato a v0.0.2 insieme a P-9.
+  4. **P-9**: confermato per prova, pronto da formalizzare in
+     `docs/review_tecnica.md` e assegnare a v0.0.2 (come già proposto nella 6ª entry).

@@ -311,3 +311,239 @@ quando il tag `v0.0.0-baseline` esiste e il branch `release/v0.0.1` è aperto.
   se** il remoto è davvero avanti integrare con `git merge` (o `pull --rebase
   --rebase-merges`); mai un rebase alla cieca quando la propria storia contiene
   merge.
+
+## 2026-08-26 (5ª entry) — ENV-W (HP Z8 G4) — sessione `session_012WiW8ep5PVnGmm7exagMDu` — **ricostruita a posteriori**
+
+> Entry scritta dalla sessione ENV-W successiva (`session_76a19823`, #10/#13) come
+> impone `CLAUDE.md` §6: la sessione qui descritta è stata archiviata da un timeout
+> della sessione SSH mentre attendeva un monitor, senza completare la checklist di
+> chiusura. Ricostruzione da: tag pubblicato su origin, stato della macchina
+> (container, worktree, immagini, modelli), log lasciati in `/tmp` e trascritto
+> della sessione. **Nessun commit** è stato prodotto da quella sessione: l'unico
+> artefatto durevole è il tag.
+
+- **Obiettivo della sessione**: #10 (collaudo in macchina) + apposizione del tag
+  `v0.0.0-baseline`, primo accesso reale a un demone Docker del progetto.
+- **Fatto** (nessuno SHA di commit: non ha committato nulla):
+  - **Tag `v0.0.0-baseline` creato in locale** su `5eb456a` (annotato, poi
+    ri-taggato col messaggio indicato dalla supervisione: "Baseline: stato di
+    develop all'avvio del piano di ricovero"). **Il push è fallito**, due volte:
+    `fatal: could not read Username for 'https://github.com'` (exit 128). La
+    sessione ha mandato una notifica push all'owner e non è mai tornata.
+  - **Correzione a un'attribuzione della 4ª entry.** Lì si legge che il tag su
+    origin "l'ha pubblicato la sessione ENV-W": non è così. Il tag che oggi esiste
+    su `origin` è **lightweight** e porta la firma dell'owner
+    (`DanieleS <59105724+danielesalpietro@users.noreply.github.com>`), mentre
+    quello locale su ENV-W è **annotato** con tagger `Daniele Salpietro`. Stesso
+    commit (`5eb456a`), quindi la baseline non è ambigua nei contenuti; ma
+    l'oggetto tag è diverso e chi lo ha pubblicato è l'owner, non una sessione.
+    O1.1 è comunque soddisfatto.
+  - Checkout di lavoro su `/home/admin/claude/NORTHSTREAM` (branch
+    `claude/project-plan-review-473nje`) + due worktree, impostazione che questa
+    sessione ha ereditato e mantenuto:
+    `ns-baseline/` detached su `v0.0.0-baseline` (**sistema sotto test**) e
+    `ns-harness/` su `release/v0.0.1` (**harness**).
+  - Verificato per diff che fra `5eb456a` e `release/v0.0.1` il runtime non cambia:
+    `docker-compose-northstream-ai.yml` differisce solo per spazi bianchi, l'unica
+    altra modifica è `.env` → `.env.example` con default identici.
+  - Stack avviato **dal working tree byte-identico alla baseline**: base
+    19:37:28Z → ~19:57Z (≈20 min, quasi tutti di pull delle 16 immagini);
+    addon+GPU 20:10:16Z → 20:13Z (build delle due immagini locali).
+    Passthrough GPU verificato con `nvidia-smi` dentro il container Ollama.
+  - Modelli scaricati: `granite4:1b` e `granite-embedding:30m` (20:26Z → ~20:32Z).
+  - Sonda su 13 endpoint dall'host: tutti rispondenti.
+- **Decisioni prese**:
+  - `--expected baseline.json` (non `current.json`) per il run contro il tag:
+    `current.json` attende `T0.12 PASS`, che è la progression di v0.0.1, non della
+    baseline. Decisione mantenuta e usata dal run di riferimento (#13).
+  - Non toccare i permessi dei file per aggirare il difetto trovato (v. sotto):
+    ha eseguito gli script con `bash <script>`, lasciando il working tree pulito.
+- **Test eseguiti**:
+  - `docker compose config -q` sulle 3 combinazioni (base; +addon; +addon+gpu) →
+    **exit 0 su tutte e tre** (equivalente manuale di T0.1 PASS).
+  - Nessun test del harness: la sessione si è interrotta prima.
+- **Non funziona / sospeso**:
+  - **Nuovo difetto misurato, non presente nella review**: `start-addon.sh`,
+    `register-connector.sh` e `demo-compare.sh` sono **`100644` in git**, quindi
+    su un clone pulito i comandi documentati `./start-addon.sh` e
+    `./register-connector.sh` falliscono con "Permission denied". Verificato da
+    questa sessione: `git ls-files -s` → `100644` per i tre script (e `100755`
+    per `bench/t0/run.sh`, che invece è corretto). Proposto come finding **P-9**
+    (v. 6ª entry).
+  - **Connettore CDC non registrato**: l'ultimo comando della sessione è stato
+    `bash register-connector.sh`, ma alle 20:47Z `GET /connectors` rispondeva `[]`
+    e Kafka non aveva alcun topic `northstream.*`. La registrazione non è andata a
+    buon fine (o non è mai partita): la sessione è morta lì.
+  - **Push impossibile da ENV-W**: nessuna credenziale HTTPS, `gh` non
+    autenticato, chiave SSH non abilitata su GitHub
+    (`git@github.com: Permission denied (publickey)`). È lo stesso blocco che ha
+    fermato anche la 6ª entry.
+  - Nessuna entry di logbook, nessun `docs/runs/`, nessun archivio: checklist §6
+    non eseguita.
+- **Prossimo passo per la sessione successiva**: registrare il connettore e
+  proseguire con #10 e #13 — fatto nella 6ª entry.
+
+## 2026-08-26 (6ª entry) — ENV-W (HP Z8 G4) — Claude Code, sessione operativa #10 + #13
+
+- **Obiettivo della sessione**: trasformare in misure i finding che la review aveva
+  dedotto leggendo il codice (issue #10) ed eseguire il **run T0 di riferimento
+  contro il tag `v0.0.0-baseline`** (issue #13). Prima sessione del progetto con un
+  demone Docker vero *e* modelli veri.
+
+- **Fatto**:
+  - Ricostruita e scritta la 5ª entry, mancante, della sessione ENV-W archiviata dal
+    timeout SSH (`CLAUDE.md` §6). Aveva prodotto un solo artefatto durevole — il tag
+    `v0.0.0-baseline` — e lasciato il connettore CDC **non** registrato.
+  - Registrato il connettore Debezium (`bash register-connector.sh`, stato
+    `RUNNING`/task 0 `RUNNING`) e completato il collaudo di #10.
+  - Due run T0 archiviati secondo `docs/piano_ricovero.md` §3, con `SHA256SUMS`
+    generato e copia verificata in `~/NORTHSTREAM-archive/`:
+    - `20260826-2049-envw-659236a` — suite `core` contro `release/v0.0.1`
+      (`docs/runs/20260826-2049-envw-659236a.md`): **6 PASS + 4 XFAIL**.
+    - `20260826-2053-envw-5eb456a` — suite `full` contro il tag baseline
+      (`docs/runs/20260826-2053-envw-5eb456a-baseline.md`): **5 PASS + 6 XFAIL +
+      1 XPASS**, `RESULT: OK (no regression)`. **È il metro di O1.3.**
+  - **O1.2 verificato sul campo**: dopo il run contro il tag,
+    `git -C ns-baseline status --porcelain` è vuoto e `HEAD` è ancora `5eb456a`.
+    Il harness misura il checkout del tag senza modificarlo.
+
+- **Collaudo #10 — tabella confermato / smentito** (comandi e output completi nei
+  grezzi archiviati e nei due report in `docs/runs/`):
+
+  | Finding | Atteso | Comando eseguito | Osservato | Esito |
+  |---|---|---|---|---|
+  | **P-1** Kafka dall'host | confermato | `docker run --rm --network host edenhill/kcat:1.7.1 -b localhost:9092 -L` e `... -C -t connect_configs -c 1 -e` | i metadata *arrivano* (`1 brokers: broker 1 at kafka:9092`), ma il consumo reale muore su `Failed to resolve 'kafka:9092': Name does not resolve`; `getent hosts kafka` non risolve. Controprova dentro la rete Docker: stesso comando, OK | **Confermato** (con precisazione: non è un timeout, è un indirizzo annunciato inutilizzabile) |
+  | **P-2** Trino senza cataloghi | confermato | `docker exec northstream-trino trino --execute "SHOW CATALOGS"` | solo `"system"`; `SELECT count(*) FROM postgresql.public.orders` → `Catalog 'postgresql' not found`; `./trino/catalog` esiste sull'host **creata vuota da Docker**, `root:root`, alle 19:53 (primo `up`), e non è tracciata in git né sulla baseline né su `release/v0.0.1` | **Confermato**, incluso il dettaglio della directory creata da Docker |
+  | **P-6** `vm.max_map_count` | da verificare su Linux nativo | `sysctl vm.max_map_count`; `docker logs northstream-elasticsearch`; `docker inspect` | `vm.max_map_count = 1048576`, impostato **in modo persistente dall'host** (`/etc/sysctl.d/10-map-count.conf`, non da Docker Desktop: qui non c'è). Elasticsearch `healthy`, `RestartCount=0`, nessuna riga di bootstrap check nei log; OpenMetadata risponde `HTTP 200` | **Non riproducibile su questa macchina** — non "smentito": l'host arriva già configurato, quindi il difetto non è esercitabile qui. Serve un host Linux non preconfigurato (o abbassare temporaneamente il sysctl, fuori scope) |
+  | **A-3** id sovrascritti | confermato in CI | T0.8 (harness) | `count grew by only 0 after restart` — su ENV-W con modelli veri, non col mock | **Confermato anche su ENV-W** |
+  | **A-5** `/health` non fallisce | confermato in CI | T0.11 (harness) | `/health still reports ok with qdrant down` | **Confermato anche su ENV-W** |
+  | **A-2** contesto stantio | dedotto | T0.9 (harness, `NS_RECENCY_SECONDS=300`) | dopo 300 s con generatore fermo il `context_used` contiene ancora l'anomalia invecchiata | **Confermato — prima misura del progetto** |
+  | **A-8** ritardo scoperta topic | 4 min 46 s in CI | registrazione connettore alle 20:48:13Z + polling di `/events` ogni 5 s | topic CDC creati entro 1 s; **primo evento in `/events` dopo 8 s** | **Confermato nel meccanismo, magnitudo diversa: v. sotto** |
+  | **A-1** retrieval non semantico | XFAIL atteso | T0.10 (harness) + 3 riesecuzioni | `context_used` contiene l'evento `Depot-9` in prima posizione, 3/3 stabile → **XPASS** | **Parzialmente smentito: v. sotto** |
+  | **P-5** tier RAM | fuori portata da ENV-W | `docker stats --no-stream` | 19 container, **9 748 MiB ≈ 9,52 GiB** RSS totale + 6 517 MiB di VRAM | **Resta aperto**: la misura non lo verifica |
+  | **T0.2–T0.5** stack, CDC, buffer, `/compare` | PASS | harness, suite `core` e `full` | tutti **PASS**; T0.5 verde **al primo tentativo** senza usare il retry tollerato dal piano §4.1 | **Confermati PASS con modelli veri** |
+
+- **Decisioni prese**:
+  - **Non ho riavviato lo stack**: era già su dalla sessione precedente, avviato da un
+    working tree il cui runtime è byte-identico a `5eb456a` (diff verificato: tocca solo
+    `CHANGELOG.md`, `CLAUDE.md`, `docs/`). Rifarlo avrebbe bruciato ~25 minuti per
+    misurare lo stesso identico sistema. Costo: T0.2 misura la raggiungibilità (2 s),
+    non il tempo di boot — che resta quello ricostruito nella 5ª entry (base ≈ 20 min
+    con i pull, addon ≈ 3 min).
+  - **Ho misurato A-8 invece di aggirarlo** con il `docker restart` prescritto dal
+    README. Serviva una seconda misura indipendente, e l'ha data — con un esito
+    inatteso, v. sotto.
+  - **Non ho toccato `expected/baseline.json`.** Nessun finding è stato smentito
+    *prima* del run, quindi non c'era attesa da correggere in anticipo. L'unico
+    scostamento (T0.10) è emerso *dal* run: metterlo a `PASS` a posteriori
+    cristallizzerebbe nel metro di riferimento l'idea che la baseline gestisca i siti
+    fuori `KNOWN_SITES`, che è esattamente ciò che il run **non** dimostra.
+  - **`NS_RECENCY_SECONDS=300`** (invece di 900) per il primo giro, dichiarato nel
+    report: T0.9 dimostra che il contesto conserva eventi più vecchi di 5 minuti, non
+    di 15. Asserzione più debole, sufficiente al difetto. **`NS_TEST_TIMEOUT=900`**
+    (invece di 600) perché altrimenti T0.9 non può proprio finire (v. sotto).
+  - **Due report in `docs/runs/`, non uno.** `CLAUDE.md` §4 chiede un report per ogni
+    run di test; il run di collaudo con modelli veri contro `release/v0.0.1` è la prima
+    esecuzione di T0.5 del progetto e merita di restare agli atti.
+
+- **Test eseguiti**: v. la tabella sopra e i due file in `docs/runs/`. In sintesi:
+  `bench/t0/run.sh --suite core --env envw` → `{"PASS": 6, "XFAIL": 4}`;
+  `bench/t0/run.sh --suite full --repo <worktree v0.0.0-baseline> --expected
+  bench/t0/expected/baseline.json --env envw` → `{"PASS": 5, "XFAIL": 6, "XPASS": 1}`.
+  Entrambi `RESULT: OK (no regression)`. Nessun PASS dell'ultimo run archiviato
+  (`ci-smoke-33008193653`) è regredito.
+
+- **Non funziona / sospeso**:
+  - **A-8 misurato a 8 s, non a ~5 minuti — e il motivo conta.** `kafka-python` 2.0.2
+    (verificato dentro il container) ha `metadata_max_age_ms = 300000`: l'agent
+    rinfresca i metadata a intervalli fissi **a partire dal proprio avvio**, non dalla
+    registrazione del connettore. Qui l'agent era su dalle 20:13:15.69Z, quindi i
+    refresh cadevano a …20:43:15, **20:48:15**, 20:53:15; il connettore è stato
+    registrato alle 20:48:13Z, **2,7 s prima di un refresh**, e il primo evento è
+    comparso alle 20:48:19.99Z. Il ritardo di A-8 non è "circa 5 minuti": è una
+    variabile **uniforme in [0, 5 min]**, il cui valore dipende da quanto manca al
+    prossimo refresh. I 4 min 46 s misurati in CI sono il caso quasi-peggiore (agent
+    appena avviato, connettore registrato subito dopo), non il caso tipico. La gravità
+    pratica non cambia — chi segue il README può aspettare fino a 5 minuti — ma la
+    formulazione del finding sì. **Proposta a #2**: sostituire "~5 minuti" con "fino a
+    `metadata_max_age_ms` (default 5 min), a seconda della fase del refresh".
+  - **XPASS su T0.10: A-1 è vero nel meccanismo, non nella conseguenza asserita.**
+    `Depot-9` non è in `KNOWN_SITES` (verificato nel codice), quindi il boost keyword
+    non contribuisce: il percorso esercitato è quello semantico puro, e ha funzionato,
+    3 volte su 3. Ma la collection aveva **61 punti** contro i ~29 000/giorno stimati
+    a regime, e con `top_k = 5` su 61 documenti un evento appena indicizzato che
+    contiene la stringa `Depot-9` entra nei primi 5 senza bisogno di un embedding
+    forte. Che la collection sia così piccola è a sua volta conseguenza di **A-3** (il
+    restart dell'agent sovrascrive i punti: è il difetto che T0.8 misura). Quindi
+    T0.10, com'è scritto, misura una proprietà **dipendente dalla dimensione del
+    corpus**, non il difetto che dichiara di misurare. Segnalato a #11, non riparato:
+    `bench/` è chiuso.
+  - **Difetto del harness: T0.9 con i soli default non può finire.**
+    `NS_RECENCY_SECONDS` vale 900 s e `NS_TEST_TIMEOUT` 600 s, quindi il test viene
+    **sempre** ucciso dal `timeout` prima di poter asserire, e il run lo registra come
+    KO — cioè come XFAIL "giusto" per il motivo sbagliato. Segnalato a #11.
+  - **Difetto del harness: l'archiviazione §3 non è implementata.** `run.sh` non genera
+    `SHA256SUMS` e il `manifest.json` non registra "versioni immagini/modelli" come
+    richiede `docs/piano_ricovero.md` §3. Per questi due run li ho prodotti a fianco
+    (`SHA256SUMS` + un `env.json` con host, kernel, CPU, GPU, versioni Docker, modelli
+    Ollama e image id dei 19 container) **senza toccare `bench/`**. Segnalato a #11.
+  - **Nuovo finding proposto: P-9 [MAJOR] — i comandi del README non sono eseguibili
+    su un clone pulito.** `start-addon.sh`, `register-connector.sh` e `demo-compare.sh`
+    sono `100644` in git (`git ls-files -s`), mentre `bench/t0/run.sh` è correttamente
+    `100755`. Su un clone fresco `./start-addon.sh` fallisce con "Permission denied":
+    è il **primo comando** del Quick Start. Trovato dalla sessione precedente,
+    verificato qui. Non riparato: cambiare i modi è un cambiamento di comportamento
+    documentato e appartiene a una release (candidato naturale: v0.0.2, insieme al
+    preflight O3.4), non a una sessione di misura.
+  - **ENV-W non può parlare con GitHub: né push né commenti.** `gh auth status` →
+    "not logged into any GitHub hosts"; nessun token nell'ambiente;
+    `git config credential.helper` vuoto; `ssh -T git@github.com` →
+    `Permission denied (publickey)`. Di conseguenza
+    `git push origin local/release-v0.0.1:release/v0.0.1` fallisce con
+    `fatal: could not read Username for 'https://github.com'` (exit 128), esattamente
+    come era successo alla sessione precedente col tag. **I due commit di questa
+    sessione esistono solo sulla Z8** (`fdc1ecf` logbook, `2326a6a` report + §2, sul
+    branch locale `local/release-v0.0.1` che traccia `origin/release/v0.0.1`), e i
+    commenti alle issue #10 e #13 non sono stati postati. La ricostruzione a
+    posteriori (§6 di `CLAUDE.md`) esiste proprio per questo caso: chi riprende
+    trova qui lo stato, ma **finché l'owner non sblocca le credenziali su ENV-W il
+    lavoro non è visibile a nessun'altra sessione**. È il blocco numero uno da
+    risolvere: rende ENV-W un ambiente che misura ma non pubblica.
+  - **P-6 non esercitabile qui** (v. tabella): serve un host Linux non preconfigurato.
+
+- **Prossimo passo per la sessione successiva**: con il run di riferimento archiviato,
+  la DoD di #13 è raggiunta e **#15 (tag `v0.0.1`) è sbloccata** — il CHANGELOG è già
+  pronto sotto `[Unreleased]` e il progression test dichiarato (T0.12) è verde su
+  `release/v0.0.1` e XFAIL sulla baseline, cioè esattamente il flip che la release
+  dichiara. Prima del tag, decidere sui due punti aperti qui sotto.
+
+- **Decisioni richieste all'owner**:
+  1. **Sbloccare GitHub su ENV-W — prerequisito di tutto il resto.** Due commit
+     (`fdc1ecf`, `2326a6a`) sono pronti e non pushabili, e i commenti a #10 e #13
+     non sono postabili. Basta un `gh auth login` sulla Z8 (che configura anche il
+     credential helper per git), oppure una deploy key / un PAT in
+     `~/.git-credentials`. Fino ad allora ENV-W misura ma non pubblica: qualunque
+     sessione futura sulla Z8 sbatterà sullo stesso muro. In alternativa immediata:
+     l'owner esegue `git -C ~/claude/ns-harness push origin
+     local/release-v0.0.1:release/v0.0.1` dalla propria sessione sulla Z8.
+     Le issue **non** sono state chiuse, come da direttiva.
+  1-bis. **Allineare il tag `v0.0.0-baseline`**: su origin è lightweight, in locale
+     su ENV-W è annotato (stesso commit). Se si vuole il tag annotato pubblico va
+     ri-pubblicato dall'owner con `--force`; se va bene così, cancellare il tag
+     locale divergente sulla Z8 per non confondere le sessioni future.
+  2. **T0.10 / A-1**: l'XPASS del run di riferimento va sanato prima che qualcuno lo
+     legga come "il retrieval funziona sui siti sconosciuti". Tre strade, in ordine di
+     preferenza: (a) rafforzare T0.10 con una precondizione sulla dimensione della
+     collection e/o distrattori iniettati (scope #11, riapre un file chiuso);
+     (b) lasciarlo così e annotare l'XPASS come noto nel metro; (c) correggere la
+     formulazione di A-1 in `docs/review_tecnica.md` (scope #2), che va comunque fatta
+     perché la frase "l'embedding 30m non li ranka" non regge alla misura.
+  3. **A-8, riformulazione del finding** in `docs/review_tecnica.md` (scope #2): da
+     "~5 minuti" a "fino a `metadata_max_age_ms`, a seconda della fase del refresh",
+     con le due misure indipendenti (4 min 46 s in CI, 8 s su ENV-W) come prova che è
+     una variabile e non una costante.
+  4. **P-9**: aprire il finding e assegnarlo a una release (proposta: v0.0.2, con
+     O3.4). Finché non è chiuso, il Quick Start del README è ineseguibile alla lettera
+     su un clone pulito.
+  5. **Runner self-hosted ENV-W + `RUN_NIGHTLY`** (issue #12): resta aperto, non era
+     nello scope di questa sessione.

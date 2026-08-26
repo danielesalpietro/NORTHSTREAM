@@ -29,7 +29,10 @@ Leggere **in quest'ordine**, sempre:
    chiude. Ogni intervento cita il finding che sta chiudendo.
 4. **`docs/logbook/LOGBOOK_<fase-corrente>.md`** — che cosa hanno fatto, deciso e
    lasciato in sospeso le sessioni precedenti di questa fase. **Ultima entry = punto
-   di ripartenza.**
+   di ripartenza.** Se esiste `docs/logbook/SINTESI_fasi_chiuse.md`, leggerlo
+   prima: è la memoria distillata delle fasi già chiuse (§8). I logbook integrali
+   in `docs/logbook/archive/` **non** vanno letti in onboarding — si aprono solo
+   quando serve ricostruire un dettaglio che la sintesi non copre.
 5. **`CHANGELOG.md`** — sezione `[Unreleased]`: cosa è già cambiato ma non rilasciato.
 6. **`docs/runs/`** — l'ultimo report di test: è lo stato *misurato* del sistema
    (PASS/XFAIL/FAIL). Se contraddice un documento, comanda il report.
@@ -239,7 +242,50 @@ ogni turno. Da qui quattro regole che pesano più della scelta del modello:
    (§3.8): una sessione ferma per limite di crediti riparte con un cambio
    modello, e ricrearla raddoppia il costo del contesto già pagato.
 
-## 8. Riferimenti rapidi
+## 8. Compressione della memoria
+
+Il percorso di onboarding (§1) viene letto al primo turno e **resta in contesto
+per tutti i turni successivi**: il suo peso si moltiplica per la lunghezza della
+sessione. Misura del 26/08/2026, a Fase 0: **101 KB, ~28.800 token**. Con sei
+logbook di fase diventerebbe tre o quattro volte tanto, a parità di utilità.
+
+Comprimere qui significa **distillare, mai cancellare**: l'originale si sposta in
+`docs/logbook/archive/`, git conserva tutto, e il percorso di onboarding resta di
+dimensione costante mentre il progetto cresce.
+
+**Non si comprime mai** (se una di queste sparisce, la compressione è una
+regressione, non un'ottimizzazione):
+1. Le decisioni, il loro perché, e **le alternative scartate**.
+2. I numeri misurati: esiti dei test, misure, costi.
+3. Gli item aperti: blocchi, sospesi, decisioni richieste all'owner.
+4. Le lezioni operative che hanno generato una regola di questo file.
+
+**È rumore, e si comprime**: la narrazione del *come* (sette giri di CI → una
+riga con i due difetti trovati); lo stato ormai superato (un blocco poi risolto,
+un "prossimo passo" già eseguito); la duplicazione dello stesso fatto tra §2,
+logbook e CHANGELOG; le minuzie di coordinamento fra sessioni, una volta che la
+fase è chiusa.
+
+**Quando**: obbligatoriamente alla chiusura di ogni fase (tag) — il logbook della
+fase si distilla in una sezione di `docs/logbook/SINTESI_fasi_chiuse.md` (una
+pagina per fase, non di più) e l'originale va in `archive/`. Fuori dalle
+chiusure, quando il percorso di onboarding supera **40.000 token**.
+
+**Verifica** (vale la regola §3.1: nessun "fatto" senza riscontro): la sintesi è
+valida solo se, leggendo *solo* lei, una sessione nuova sa dire quali decisioni
+sono state prese e perché, quali numeri sono stati misurati, e che cosa è
+rimasto aperto. Se non ci riesce, la compressione ha perso informazione: si
+rifà, non si accetta.
+
+**Nota sul livello sessione**: la entry di logbook **è** la forma compressa del
+contesto di una sessione. Il criterio di qualità di una entry è esattamente
+questo — la sessione successiva deve poter proseguire leggendo lei sola, senza
+la conversazione che l'ha prodotta.
+
+**Metrica**: il peso del percorso di onboarding va riportato nel campo "Costo
+della sessione" (§4) a ogni chiusura di fase, per vedere se resta piatto.
+
+## 9. Riferimenti rapidi
 
 - Stack base: `docker compose -f docker-compose-northstream-ai.yml up -d` ·
   addon: `./start-addon.sh` (`--gpu` per passthrough) · connettore CDC:

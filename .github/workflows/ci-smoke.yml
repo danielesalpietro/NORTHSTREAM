@@ -63,6 +63,28 @@ jobs:
           done
           curl -s http://localhost:8083/connectors/northstream-postgres-connector/status
 
+      # The agent subscribes to Kafka by topic pattern at startup, and
+      # kafka-python only refreshes cluster metadata every 5 minutes by
+      # default. Topics created later — which is the case here, since the CDC
+      # connector is registered after the stack is up, exactly as the demo
+      # instructions say — are therefore not visible to it immediately. Wait
+      # for the first event to actually land in the agent before asserting
+      # anything about freshness, and record how long that took.
+      - name: Wait for the agent to observe its first event
+        run: |
+          start=$(date +%s)
+          for _ in $(seq 1 72); do
+            count=$(curl -sf http://localhost:8500/events?limit=1 | tr -d '[:space:]' | wc -c)
+            if [ "${count:-0}" -gt 2 ]; then
+              echo "agent saw its first event after $(( $(date +%s) - start ))s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "the agent saw no event in $(( $(date +%s) - start ))s" >&2
+          docker logs --tail 50 northstream-stream-agent >&2 || true
+          exit 1
+
       - name: Run the T0 CI suite
         env:
           # RUN_ID is left to the harness so it follows the convention of
@@ -72,6 +94,7 @@ jobs:
           NS_STACK_TIMEOUT: "240"
           NS_INDEX_TIMEOUT: "180"
           NS_TEST_TIMEOUT: "300"
+          NS_AGENT_TIMEOUT: "120"
         run: bench/t0/run.sh --suite ci --env ci-smoke --report results/ci-smoke
 
       - name: Collect container logs

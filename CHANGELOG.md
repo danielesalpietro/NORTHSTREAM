@@ -10,6 +10,30 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 
 ## [Unreleased]
 
+*(Nessuna voce: la prossima release è v0.0.2 — Fase 1, raggiungibilità e
+riproducibilità. Finding già confermati e in coda: **P-9** script del Quick Start
+non eseguibili su clone pulito ([#41](https://github.com/danielesalpietro/NORTHSTREAM/issues/41)),
+**P-10** teardown di `ci-nightly` che cancella `ollama_data`
+([#42](https://github.com/danielesalpietro/NORTHSTREAM/issues/42)).)*
+
+## [v0.0.1] — 2026-08-26
+
+**Che cosa rilascia questa versione**: la capacità di *misurare* il progetto, e la
+verità documentale. Il comportamento runtime dello stack e dell'agent è
+**identico** alla baseline `v0.0.0-baseline`: v0.0.1 non ripara il sistema, lo
+rende osservabile e smette di raccontarlo male.
+
+**Progression test dichiarato**: T0.12 (verità documentale) da XFAIL a **PASS** —
+12 violazioni azzerate.
+
+**Run di riferimento**: [`docs/runs/20260826-2053-envw-5eb456a-baseline.md`](docs/runs/20260826-2053-envw-5eb456a-baseline.md)
+— suite `full` contro il tag baseline su ENV-W con modelli reali: 5 PASS + 6 XFAIL
++ 1 XPASS, `RESULT: OK (no regression)`. Sei finding della review passano da
+deduzione statica a misura (P-1, P-2, A-2, A-3, A-5; P-6 non riproducibile su host
+preconfigurato). Due finding nuovi emersi dalla misura: **A-8** (ritardo di scoperta
+dei topic, variabile in [0, 5 min]) e **P-9**; uno segnalato dall'esecuzione:
+**P-10**.
+
 ### Added
 - `bench/t0/` — harness della suite T0: 12 test indipendenti dall'ordine, valori
   sentinella fissi (77.31, 91.73, Depot-9/93.17), output JSON per test, semantica

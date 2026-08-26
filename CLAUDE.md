@@ -165,6 +165,14 @@ grezzi in `~/NORTHSTREAM-archive/<RUN_ID>/` — mai nel repo.
   poi esecuzione della issue assegnata. Le sessioni remote non devono aspettarsi
   di raggiungere la Z8 in altro modo: se serve ENV-W, si chiede all'owner di
   attivare la sessione, indicando issue e branch.
+  **Avviarla sempre dentro `tmux` (o `screen`)**: se la CLI gira direttamente in
+  una sessione SSH, un timeout della connessione uccide la sessione a metà
+  lavoro — è già successo durante un deploy, costando il riavvio da capo.
+  Con `tmux new -s northstream` la sessione sopravvive alla caduta e si
+  riprende con `tmux attach -t northstream`. Una sessione ENV-W che riprende
+  dopo una caduta **non riparte da zero**: verifica prima lo stato reale
+  (`docker compose ps`, `docker images`, `ollama list`, `git log`) e riprende
+  dal primo passo mancante.
 
 ## 6. Checklist di chiusura sessione (obbligatoria, in ordine)
 

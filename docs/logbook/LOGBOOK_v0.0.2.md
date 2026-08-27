@@ -12,6 +12,13 @@ forma compressa della fase, e alla chiusura diventa l'ESITO FASE.
 
 ## SINTESI DI FASE — aggiornata al 2026-08-27
 
+> **Correzione di riferimenti (supervisione, 27/08)**: la terza entry cita i commit
+> `5f98800` e `531ed58`, che **non esistono nel repository** — sono gli SHA che la
+> Sessione A aveva in locale prima del rebase imposto dal push su branch condiviso.
+> Gli SHA reali sono **`83b416c`** (#41, bit di esecuzione) e **`5534ef7`** (#42,
+> teardown). È l'effetto collaterale prevedibile di due sessioni sullo stesso branch:
+> annotare l'SHA *dopo* il push, non prima.
+
 **Dove siamo**: **Sessione A** attiva su `release/v0.0.2`, ha chiuso lato codice
 #41 (P-9) e #42 (P-10) — v. terza entry del 27/08. #41 verificato su clone pulito
 (exit 126 sparito). #42 verificato staticamente (YAML valido, `docker compose

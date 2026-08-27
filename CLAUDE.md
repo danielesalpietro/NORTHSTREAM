@@ -178,6 +178,28 @@ grezzi in `~/NORTHSTREAM-archive/<RUN_ID>/` — mai nel repo.
 - **Non-regressione**: prima di ogni push su un release branch, rieseguire almeno i
   T0 marcati PASS nell'ultimo run archiviato. Un PASS che diventa FAIL blocca il
   push, sempre.
+- **Una misura che conferma l'ipotesi attesa va controllata due volte** (regola nata
+  da due casi nello stesso giorno, 27/08). Prima: `granite4:32b-a9b-h` misurato a
+  `100% CPU` e 9 MiB di VRAM — cioè "i 19 GB non entrano nei 24", che è ciò che ci
+  aspettavamo; era un artefatto, il container Ollama era stato ricreato senza
+  passthrough GPU, e a misura corretta il modello entra al 100% in GPU. Seconda: il
+  campionatore del soak riportava lo slot di replica `"active": false` a ogni
+  campione — non perché lo slot fosse inattivo, ma perché il confronto era fatto
+  contro `'t'` mentre Postgres scriveva `true`. **Un artefatto che conferma l'ipotesi
+  attesa è quello che ha meno probabilità di essere controllato**, ed entrambi hanno
+  depistato chi li leggeva. Corollario per chi scrive strumenti di misura: **un campo
+  derivato deve poter distinguere "falso" da "non l'ho potuto sapere"** — `null` con
+  un errore popolato, mai un booleano che collassa in silenzio. Una costante
+  travestita da misura è peggio di un campo assente: il campo assente si nota.
+- **Le anomalie si scrivono quando si incontrano, non alla chiusura.** Una sessione
+  bridge (ENV-W) che tiene un errore solo nel proprio terminale lo rende invisibile
+  alla supervisione: il canale è a senso unico, e ciò che non finisce in un commit
+  non esiste. Il 27/08 due difetti reali (P-11 volume Kafka, P-12 `trino/catalog`)
+  sono arrivati alla supervisione **solo perché la sessione si è bloccata** e ha
+  dovuto chiedere. Chi lavora su un ambiente reale annota l'anomalia nel logbook
+  *mentre* la incontra — bastano tre righe — perché è lì che si decide se è un
+  incidente locale o un finding del prodotto, e la §6 (entry a fine sessione) arriva
+  troppo tardi per quella decisione.
 - **Ambienti**: scelta secondo `docs/piano_ricovero.md` §2 (ENV-L → ENV-W → ENV-R).
   Una sessione che non ha accesso ad alcun ambiente di esecuzione (es. sessione
   remota senza Docker) lo dichiara nel logbook e si limita a lavoro statico:

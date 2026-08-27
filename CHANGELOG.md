@@ -8,6 +8,15 @@ Regola (da `CLAUDE.md` §4): ogni commit che cambia comportamento aggiunge una r
 sotto `[Unreleased]` citando il finding o l'obiettivo che chiude; al rilascio la
 sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 
+## [Unreleased]
+
+*(Nessuna voce: la prossima release è v0.0.3 — Fase 2, stack onesto sulle risorse.
+In coda: profiles `core`/`lakehouse`/`governance` e `mem_limit` per servizio (**P-5**,
+[#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21)), catalogo Trino e
+configurazione memoria (**P-2**, [#22](https://github.com/danielesalpietro/NORTHSTREAM/issues/22)),
+tier riscritti sui numeri misurati (T-PROF, [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23)),
+esclusività dell'host nei run ([#44](https://github.com/danielesalpietro/NORTHSTREAM/issues/44)).)*
+
 ## [v0.0.2] — 2026-08-27
 
 **Che cosa rilascia questa versione**: raggiungibilità e riproducibilità dello

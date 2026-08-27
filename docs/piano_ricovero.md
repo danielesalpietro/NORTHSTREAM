@@ -20,15 +20,118 @@ Il principio metodologico è uno solo: **ogni difetto della review diventa un te
 | **O5** | Agent robusto e retrieval onesto | O5.1 point-id deterministici `(topic,partition,offset)` · O5.2 timestamp nel payload + filtro recency · O5.3 retrieval con filtro payload al posto del boost keyword · O5.4 `/health` reale · O5.5 `group_id` + logging strutturato | A-1…A-7 |
 | **O6** | Governance minima vera | O6.1 ingestion OpenMetadata di Postgres e Trino · O6.2 lineage visibile via API | riga OpenMetadata §2 review |
 | **O7** | Qualità AI misurata | O7.1 eval set fisso grounded-vs-baseline con asserzioni deterministiche · O7.2 matrice modelli Granite su RunPod · O7.3 scelta default motivata dai numeri | A-1 (causa), G-3 |
-| **O8** | **Casi d'uso dimostrabili** | O8.1 dati sintetici con struttura narrativa (stabilimenti che producono linee, anomalie che si raggruppano, clienti con storico) · O8.2 question set EVAL riscritto come scenari di business, non sonde tecniche · O8.3 demo-script **derivato** dai test invece che scritto a parte | **G-3 (ripromosso)** |
-| **O9** | **Explain Change** | O9.1 nozione di "prima": aggregati su finestra per sito/linea, confronto fra finestra corrente e precedente · O9.2 criterio di salienza — quale cambiamento merita di essere riportato · O9.3 collegamento fra il cambiamento e ciò che minaccia (ordine aperto, SLA) · O9.4 **controllo negativo**: nel periodo tranquillo l'assistente dice che non è cambiato nulla | — (capacità nuova) |
+| **O8** | **Casi d'uso dimostrabili** | O8.1 generatore che produce **sequenze controllate** — baseline, sviluppo, impatto, periodo tranquillo — non solo eventi realistici (stabilimenti che producono linee, anomalie che si raggruppano, clienti con storico) · O8.2 question set EVAL riscritto come scenari di business, non sonde tecniche · O8.3 demo-script **derivato** dai test invece che scritto a parte | **G-3 (ripromosso)** |
+| **O9** | **Explain Change** | O9.1 **beta1 — local change detection**: confronto deterministico fra finestra corrente e di riferimento, calcolato **fuori dal modello**, che emette `ChangeFact` strutturati sotto una policy di salienza esplicita · O9.2 **post-beta1 — streaming change detection**: gli stessi `ChangeFact` prodotti da Flink con stato per entità, sostituendo il produttore senza toccare agent, EVAL e demo-script | — (capacità nuova; è l'obiettivo che dà a Flink una responsabilità architetturale) |
 
 Fuori scope fino a dopo la beta1 (decisione §4.4 della review): Flink job, Iceberg, metastore per MinIO, K8s. La storyline del README viene **accorciata** in O2, non costruita.
 
-**Eccezione dichiarata su O9.** "Cos'è cambiato e perché dovrei preoccuparmene" non è una domanda di retrieval: il RAG restituisce i *k* eventi più simili, non può dire che il tasso di anomalie è triplicato in dieci minuti, perché quello è un aggregato sulla finestra. Il calcolo di aggregati su finestra è precisamente il mestiere di **Flink** — il layer oggi scenografico. O9 si spezza quindi in due:
+**Eccezione dichiarata su O9.** "Cos'è cambiato e perché dovrei preoccuparmene" non è una domanda di retrieval: il RAG restituisce i *k* eventi più simili, non può dire che il tasso di anomalie è triplicato in dieci minuti, perché quello è un aggregato sulla finestra. Il calcolo di aggregati su finestra è precisamente il mestiere di **Flink** — il layer oggi scenografico. O9 si spezza quindi in due, alle condizioni vincolanti della §1.1.
 
-- **O9 minimale (in beta1)**: l'agent calcola gli aggregati in Python sulla propria finestra (conteggio e tasso di anomalie per sito, confronto fra ultimi N minuti e finestra precedente). ~50 righe, nessun servizio nuovo, il congelamento della scenografia regge.
-- **O9 pieno (primo obiettivo post-beta1)**: gli aggregati diventano uno **stream derivato calcolato da Flink**, e l'agent si fonda su eventi grezzi *e* segnali di cambiamento. È l'obiettivo che retroattivamente giustifica il layer di stream processing, invece di costruirlo perché sta nel diagramma.
+- **O9.1, in beta1**: il confronto fra finestre è calcolato in Python, **fuori dal modello e fuori dal prompt flow**, e ammesso solo come *reference implementation* dell'operatore Flink futuro. Nessun servizio nuovo: il congelamento della scenografia regge.
+- **O9.2, primo obiettivo post-beta1**: lo stesso confronto diventa uno **stream derivato calcolato da Flink**, con stato per entità e finestre mantenute in continuo. È l'obiettivo che dà a Flink una responsabilità architetturale reale, invece di tenerlo perché sta nel diagramma.
+
+### 1.1 O9 — specifica vincolante (contratto `ChangeFact`)
+
+*Fissata dall'owner il 27/08/2026, dopo la prima stesura di O9. Vincola l'implementazione
+minimale: senza queste condizioni la versione Python è una scorciatoia non trasferibile a
+Flink, cioè una seconda architettura che andrà poi eliminata.*
+
+**La pipeline concettuale.** Rilevare il cambiamento, valutarne la salienza e spiegarne la
+rilevanza sono tre passaggi distinti, e il retrieval entra **dopo** i primi due:
+
+```
+Raw events → Window comparison → Change facts → Salience filtering
+           → Context enrichment / retrieval → Explanation
+```
+
+Da cui il ruolo di ciascun componente: **Python (poi Flink) determina che cosa è cambiato**;
+**il retrieval recupera che cosa quel cambiamento può influenzare**; **il modello formula una
+spiegazione vincolata alle evidenze**. Il retrieval non deve mai essere incaricato di
+*scoprire* il cambiamento.
+
+**Il rischio da evitare.** Se la beta1 permettesse all'agent di (a) leggere direttamente tutti
+gli eventi, (b) scegliere autonomamente che cosa confrontare, (c) calcolare numeri nel prompt,
+(d) stabilire liberamente che cosa sia importante — allora non staremmo prototipando Flink:
+staremmo costruendo un'architettura parallela da buttare. **Il modello deve ricevere i
+risultati del confronto, non essere il motore del confronto.**
+
+**Il contratto.** Le due responsabilità restano separate da una firma esplicita, la stessa che
+Flink onorerà dopo:
+
+```python
+detect_changes(events, current_window, reference_window, policy) -> list[ChangeFact]
+```
+
+| | Topologia |
+|---|---|
+| **beta1** | `Event store → Python change detector → ChangeFact → Agent` |
+| **post-beta1** | `Event stream → Flink → ChangeFact stream → Agent` |
+
+**Il consumatore non cambia: cambia solo il produttore dei fatti derivati.** Il porting a Flink
+è quindi la sostituzione di un produttore, non una riscrittura di agent, EVAL o demo-script —
+ed è questo il criterio con cui si giudicherà se O9.1 è stato scritto bene.
+
+**Lo schema `ChangeFact`** (forma canonica: l'output Python e l'output Flink devono essere
+confrontabili campo per campo):
+
+```json
+{
+  "entity": "Plant-B",
+  "metric": "vibration_anomaly_rate",
+  "current_window":   { "from": "…", "to": "…", "value": 0.18 },
+  "reference_window": { "from": "…", "to": "…", "value": 0.06 },
+  "change":   { "absolute": 0.12, "ratio": 3.0, "direction": "increase" },
+  "salience": "high",
+  "evidence": { "event_count": 9 }
+}
+```
+
+L'agent **non ricalcola e non reinterpreta** questi numeri: li riceve come evidenze
+strutturate, li combina col contesto governato e li spiega.
+
+**La salienza è una policy governata, non un'impressione del modello.** "Triplicato" sembra
+importante e può non esserlo: da 1 a 3 anomalie è +200% e può essere rumore; da 100 a 150 è
++50% e può essere grave. Per la beta1 **non** si costruisce un anomaly detector statistico
+general-purpose: si dichiara una policy deterministica e ispezionabile, per metrica —
+
+```yaml
+metric: vibration_anomaly_rate
+minimum_event_count: 5
+minimum_absolute_delta: 0.05
+minimum_ratio: 2.0
+severity: high
+```
+
+— dove un cambiamento è saliente **solo se soddisfa tutti i criteri contemporaneamente**.
+Quattro vantaggi, tutti verificabili: il test è deterministico; la demo è spiegabile; il
+periodo tranquillo è controllabile; il comportamento Python è riproducibile in Flink.
+
+**Tre livelli di spiegazione, visibili e non fusi.** "Perché dovrei preoccuparmene" contiene
+tre cose di natura diversa, e la risposta deve tenerle separate:
+
+| Livello | Natura | Esempio |
+|---|---|---|
+| **Explain Change** | fatto derivato dagli eventi | "il tasso di anomalie di vibrazione a Plant-B è passato dal 6% al 18% rispetto alla finestra precedente" |
+| **Explain Relevance** | collegamento col contesto governato | "Plant-B è associato alla linea che produce l'ordine Acme" |
+| **Explain Risk** | inferenza, dichiarata come tale | "il cambiamento può aumentare il rischio sulla consegna, ma i dati disponibili non consentono di prevedere un ritardo" |
+
+Fondere i tre livelli in un'unica frase apparentemente fattuale è il modo in cui un sistema di
+*situational explanation* finge di essere forecasting. La separazione è un requisito, non uno
+stile di scrittura.
+
+**Tre casi negativi distinti, che non devono collassare nello stesso "non lo so".** Sono tre
+proprietà di fiducia diverse:
+
+| Caso | Situazione | Risposta attesa | Proprietà |
+|---|---|---|---|
+| **Assenza di cambiamenti** | dati presenti e freschi, nessuna variazione oltre soglia | "non risultano cambiamenti rilevanti rispetto alla finestra precedente" — o, meglio, "il volume è aumentato leggermente, ma resta entro la variabilità prevista" | **quietness** |
+| **Assenza di dati** | eventi insufficienti nella finestra corrente o in quella di riferimento | "confronto non effettuabile" | **observability** |
+| **Cambiamento senza impatto noto** | cambiamento misurabile, nessun collegamento governato con un rischio o un processo | "cambiamento rilevato; impatto non determinabile con i dati disponibili" | **explainability** |
+
+La seconda forma della prima riga è **preferibile** alla prima: dimostra che il sistema ha
+osservato una differenza e non l'ha trasformata artificialmente in un allarme. L'asserzione del
+periodo tranquillo non verifica quindi che compaia la frase "non è successo nulla", ma che
+**l'intera catena non fabbrichi rilevanza**.
 
 ---
 
@@ -119,10 +222,22 @@ Tutti i test sono script in `bench/t0/` con exit code, output JSON per-test, e n
   | **U2 — freschezza** | *"Qualcosa non torna nei numeri EMEA — cos'è cambiato di recente?"* | Dati in movimento contro dati fermi: un assistente su warehouse risponde con i dati di stanotte ed è confidentemente sbagliato |
   | **U3 — explain change** (O9) | *"Cos'è cambiato nell'ultima mezz'ora e perché dovrei preoccuparmene?"* | La domanda che né dashboard, né warehouse, né LLM generico risolvono bene insieme |
   | **U4 — controllo negativo su dato assente** | domanda su un'entità che non esiste nello stream | L'assistente **dice di non sapere** invece di inventare: è una dimostrazione di fiducia, spesso più persuasiva di una risposta giusta |
-  | **U5 — controllo negativo su periodo tranquillo** (O9.4) | *"Cos'è cambiato?"* durante una finestra in cui non è successo nulla di rilevante | **Il modo in cui un assistente "explain change" fallisce non è tacendo, è inventando significato.** Questa classe è il negativo che rende credibile il positivo |
+  | **U5 — controllo negativo su periodo tranquillo** (O9.1) | *"Cos'è cambiato?"* durante una finestra in cui non è successo nulla di rilevante | **Il modo in cui un assistente "explain change" fallisce non è tacendo, è inventando significato.** Questa classe è il negativo che rende credibile il positivo |
   | **U6 — aggregazione verificabile** | *"Qual è il valore totale degli ordini Acme di oggi?"* | Ancoraggio numerico: la risposta è confrontabile con una `SELECT`, quindi l'errore è misurabile |
 
   Le classi U4 e U5 sono le più importanti per un pubblico aziendale, dove la paura numero uno degli LLM è l'invenzione sicura di sé.
+- **Criteri EVAL minimi di O9** (specifica §1.1 — sono il gate della v0.0.6, non una lista di desideri):
+
+  | # | Criterio | Che cosa asserisce | Classe |
+  |---|---|---|---|
+  | 1 | **Positive change** | rileva e **quantifica** un cambiamento saliente (i numeri della risposta coincidono con quelli del `ChangeFact`) | U3 |
+  | 2 | **Quiet period** | non inventa significato in assenza di cambiamenti rilevanti | U5 |
+  | 3 | **Insufficient baseline** | dichiara che il confronto **non è possibile** — distinto dal caso 2 | U5, variante *baseline insufficiente* (fixture separata) |
+  | 4 | **Change without known impact** | riporta il cambiamento **senza inventarne le conseguenze** | U3 |
+  | 5 | **Relevant change** | collega il cambiamento a un'entità di business **solo** quando il collegamento esiste nei dati governati | U1 + U3 |
+  | 6 | **Competing changes** | con più cambiamenti simultanei, li ordina secondo la **policy di salienza**, non secondo la scelta libera del modello | U3 |
+
+  I criteri 2, 3 e 4 sono i tre negativi della §1.1 (quietness, observability, explainability) e vanno asseriti **separatamente**: un'unica asserzione "risponde di non sapere" li farebbe collassare e perderebbe esattamente ciò che dimostrano. Il criterio 6 è quello che smaschera un'implementazione in cui la salienza è tornata a essere un'impressione del modello: con due `ChangeFact` costruiti perché la policy li ordini in un modo preciso, l'ordine della risposta è verificabile meccanicamente.
 - **Verifica deterministica, non LLM-judge**: per Q1–Q3 la risposta grounded deve contenere il valore numerico iniettato (regex); per Q4 deve contenere un rifiuto esplicito ("does not show") e **nessun** numero inventato. Metriche: `grounding_accuracy` per classe, `hallucination_rate` su Q4, latenza p50/p95.
 - **Baseline EVAL** (v0.0.4, pre-modifica retrieval) vs **post** (stessa release, dopo O5.3): gate = Q2 migliora senza che Q1 peggiori; `hallucination_rate` non cresce.
 - **Matrice modelli (v0.1.0-beta1) — ENV-W per default, ENV-R solo se serve**: {granite4:350m, 1b, 3b, 7b-a1b-h, 32b-a9b-h} × {granite-embedding:30m, 278m} — 10 combinazioni. **Tutte entrano nei 24 GB della 3090**: il più grande, `granite4:32b-a9b-h`, pesa 19 GB, e il run di riferimento ha misurato 6,5 GB di VRAM per la coppia 1b+30m. La matrice va quindi eseguita **sulla Z8 via `ci-nightly`**, in serie e di notte: costo zero, nessun pod da gestire, nessun output da recuperare prima di uno spegnimento. Stima: ~10 combinazioni in poche ore di wall-clock, irrilevante se gira mentre nessuno guarda. **ENV-R (RunPod) resta la via solo per due casi**: un modello che ecceda i 24 GB di VRAM (oggi nessuno in matrice), o la necessità di comprimere il wall-clock eseguendo le combinazioni in parallelo — un pod per modello (4090 ciascuno, A100 per il 32b). Di conseguenza **RP-0 e il packaging RunPod diventano opzionali** per la beta1: restano nel piano come capacità disponibile, non come dipendenza. Output: tabella accuracy/latenza per combinazione → i default dei tier (`examples/*/.env`) vengono **derivati dai numeri**, non più dichiarati a sensazione. Chiude anche il criterio GO/NO-GO dell'issue #1 (il MoE 7b-a1b-h e il 32b sono nella matrice: se non battono i densi sul question set, Norimberga perde il suo caso d'uso qui).
@@ -176,7 +291,7 @@ Ogni release: branch `release/vX.Y.Z` da `develop` → fix → CI verde → run 
 | **v0.0.3** | Profili & tier onesti | Compose profiles `core`/`lakehouse`/`governance`, `mem_limit` per servizio, `trino/catalog/postgres.properties` + config memoria Trino, tabella tier del README riscritta sui numeri misurati | **T0.7** | Nuovo T-PROF: profilo `core` completo con RSS totale ≤ 14 GB su ENV-L (misurato via `docker stats`, registrato nel manifest) |
 | **v0.0.4** | Agent robusto | Point-id da `(topic,partition,offset)`, timestamp nel payload + filtro recency in query, retrieval con `Filter` payload (site) al posto del boost keyword (che viene rimosso), `/health` con check dipendenze, `group_id` Kafka, logging strutturato, `query_points` al posto della API deprecata | **T0.8, T0.9, T0.10, T0.11** | EVAL pre/post su ENV-W: Q2 ↑ senza Q1 ↓, hallucination_rate ≤ baseline; primo T-SOAK-24h verde su (a),(b),(c) |
 | **v0.0.5** | Governance minima | Ingestion OpenMetadata per Postgres e Trino (container ingestion o job one-shot), asset e lineage visibili | Nuovo **T-GOV**: API OpenMetadata restituisce > 0 tabelle per entrambi i servizi e almeno 1 edge di lineage | Profilo `governance` documentato con costo RAM misurato |
-| **v0.0.6** | **Casi d'uso e Explain Change** | Dati sintetici con struttura narrativa (**G-3**: stabilimenti che producono linee, anomalie che si raggruppano, clienti con storico); question set EVAL riscritto sulle sei classi U1–U6; **O9 minimale** — aggregati su finestra calcolati dall'agent, criterio di salienza, collegamento con gli ordini aperti; demo-script **generato** dai casi d'uso | Nuovi **U-test**: U1–U3 rispondono con i fatti attesi; **U4 e U5 sono i gate veri** — nessuna invenzione su dato assente, nessun allarme inventato nel periodo tranquillo | Il demo-script non è più scritto a mano: se un caso d'uso non passa, la demo non si fa |
+| **v0.0.6** | **Casi d'uso e Explain Change** | Generatore che produce **sequenze controllate** — baseline, sviluppo, impatto, periodo tranquillo (**G-3**: stabilimenti che producono linee, anomalie che si raggruppano, clienti con storico); question set EVAL riscritto sulle sei classi U1–U6; **O9.1** — `detect_changes(...)` fuori dall'agent, `ChangeFact` strutturati, policy di salienza dichiarata in file, tre livelli di spiegazione separati (§1.1); demo-script **generato** dai casi d'uso | Nuovi **U-test**: U1–U3 rispondono con i fatti attesi; **U4 e U5 sono i gate veri** — nessuna invenzione su dato assente, nessun allarme inventato nel periodo tranquillo; i **sei criteri EVAL di O9** (§4.2) tutti verdi, con i tre negativi asseriti separatamente | Il demo-script non è più scritto a mano: se un caso d'uso non passa, la demo non si fa. Criterio di accettazione di O9.1: **sostituire il produttore di `ChangeFact` non deve toccare agent, EVAL e demo-script** — se li tocca, la Python non è una reference implementation ma un'architettura parallela |
 | **v0.1.0-beta1** | Beta | Consolidamento: matrice EVAL completa su ENV-R (10 combinazioni), default dei tier derivati dai numeri, chiusura formale issue #1 col criterio §4.2, CHANGELOG cumulativo, release notes, demo-script finale provato su ENV-L in condizioni demo reali | Tutti i T0 **PASS** (zero XFAIL residui) | T-SOAK-24h verde su tutti i punti incluso (d); il report della matrice EVAL è pubblicato in `docs/runs/`; una persona diversa dall'autore (o l'autore su macchina pulita) riesegue il Quick Start da zero seguendo solo il README |
 
 **Definition of Done per v0.1.0-beta1**: zero XFAIL; zero claim documentali falsi (T0.12 verde per costruzione); riproducibile da README su macchina pulita; numeri di qualità pubblicati; tutti i run archiviati secondo §3.

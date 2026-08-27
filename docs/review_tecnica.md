@@ -141,6 +141,8 @@ Lo stesso vale per **O9**: "cos'è cambiato" presuppone che qualcosa possa cambi
 
 **Assegnato a v0.0.6** insieme a O8/O9. Il generatore va riscritto con: stabilimenti associati a linee di prodotto, anomalie che si presentano in cluster temporali con una causa implicita, ritmo variabile, e clienti con profili d'ordine distinguibili.
 
+**Precisazione dell'owner (27/08/2026), che alza ancora l'asticella**: non basta produrre eventi *realistici*. Il generatore deve produrre **sequenze controllate** con quattro fasi riconoscibili — **baseline, sviluppo, impatto, periodo tranquillo** — perché sono esattamente ciò che i sei criteri EVAL di O9 asseriscono (`docs/piano_ricovero.md` §4.2): senza una baseline dichiarata non esiste finestra di riferimento, senza un periodo tranquillo non esiste il controllo negativo di *quietness*, e senza una fase di sviluppo distinta dall'impatto non c'è modo di verificare che la policy di salienza scatti quando deve e non prima. **O8 dimostra il valore, O9 costruisce il meccanismo che rende quel valore credibile: G-3 li alimenta entrambi**, ed è per questo che è un prerequisito di fase, non un abbellimento.
+
 **G-4 [MINOR] — kafka-python 2.0.2** è del 2020 e il progetto originale è rimasto dormiente per anni (il pin a Python 3.11 evita l'incompatibilità nota con 3.12). Funziona, ma `confluent-kafka` (librdkafka) sarebbe più solido e coerente con la narrativa; da valutare solo insieme ad A-4.
 
 ### 3.4 Documentazione vs realtà

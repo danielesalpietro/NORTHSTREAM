@@ -235,43 +235,48 @@ vuoto. Dettaglio in `docs/runs/20260827-0859-envw-9082a02.md`.
   preflight P-11 discrimina correttamente sui tre stati del volume `kafka_data`
   (assente/vecchio/nuovo).
 - **P-13/[#48](https://github.com/danielesalpietro/NORTHSTREAM/issues/48) —
-  nuovo, trovato dalla stessa verifica ENV-W**: `.gitkeep` (P-12) risolve il
-  checkout pulito ma non l'aggiornamento di un clone esistente — `git pull` su un
-  clone con `trino/catalog` già root-owned fallisce con `Permission denied` e
-  lascia l'albero a metà. Stesso meccanismo di P-11/P-12 (Docker gira come root
-  e lascia in giro stato che l'utente non può toccare), stessa cecità della CI
-  (ogni run parte da zero). **Implementato da questa sessione** (v. quarta entry):
-  nota di migrazione unica in CHANGELOG (rimuovere PRIMA di `git pull`, ordine
-  esplicito) + preflight esteso a directory non scrivibili nell'albero del repo,
-  non solo il volume Docker. **Non verificabile in CI per costruzione — spetta a
-  ENV-W**, stesso protocollo a tre stati già usato per P-11.
+  chiuso e verificato su ENV-W**: `.gitkeep` (P-12) risolve il checkout pulito
+  ma non l'aggiornamento di un clone esistente — `git pull` su un clone con
+  `trino/catalog` già root-owned falliva con `Permission denied` e lasciava
+  l'albero a metà. Implementato (nota di migrazione unica in CHANGELOG +
+  preflight esteso a directory non scrivibili nell'albero del repo) e
+  **verificato su ENV-W** con lo stesso protocollo a tre stati di P-11, **più
+  una controprova sull'istanza reale**: il preflight puntato sul clone
+  concreto che quella mattina non riusciva a fare `git pull` ha rilevato
+  entrambe le directory compromesse. Stesso meccanismo di P-11/P-12 (Docker
+  gira come root e lascia in giro stato che l'utente non può toccare), stessa
+  cecità della CI (ogni run parte da zero).
 - **`bench/soak/lib/sample.py:96`**: il campo `active` dello slot di replica è
   sempre `False` per un difetto di parsing (`"t"` contro `true`), non per lo stato
-  reale — blocca T-SOAK-24h. **Sessione A**, non questa.
+  reale — blocca T-SOAK-24h. **Sessione A**, non questa; non blocca #20 (T-SOAK
+  non è un gate di v0.0.2, v. piano §6).
 - **`event_loss_db_vs_qdrant` senza tolleranza**: `WARN` anche per un solo evento
   di disallineamento di campionamento — su 24 h sarebbe rumore permanente.
-  **Sessione A**, non questa.
-- **`preflight.ps1` da collaudare** su un host Windows reale o ENV-L (entrambi i
-  controlli P-11 e P-13 aggiunti in questa sessione, mai eseguiti su PowerShell
-  vero).
-- **Debito documentale README** (tabella Kafka, sezione prerequisiti per il
-  preflight) da pagare a fine release, insieme a #20.
+  **Sessione A**, non questa; stesso motivo, non blocca #20.
+- **`preflight.ps1` mai collaudato su PowerShell reale** (entrambi i controlli
+  P-11 e P-13 aggiunti in questa sessione, mai eseguiti fuori da questa
+  sandbox Linux) — debito che la release accetta esplicitamente, coerente con
+  "verificato solo staticamente" già dichiarato nel CHANGELOG.
 - Fuori fase ma tracciato: #40 (T0.10 fragile, Fase 3), P-5 (Fase 2, T-PROF),
-  RP-0 (opzionale, Fase 5).
+  RP-0 (opzionale, Fase 5), **#47** (warm-up gate della nightly, Fase 3).
 
 **Conseguenza di pianificazione (27/08)**: il release train ha ora **sette** fasi.
 La beta1 si sposta da metà a **fine settembre**. Il costo è accettato dall'owner:
 senza O8/O9 la beta1 sarebbe un sistema che passa i propri test tecnici e non
 dimostra niente a un utente finale.
 
-**Prossimo passo**: **T0.6 è misurato con modelli veri, P-1/P-3/P-4/P-7/P-9/P-10/
-P-11/P-12 sono tutti chiusi e verificati su ENV-W.** Resta solo **P-13
-([#48](https://github.com/danielesalpietro/NORTHSTREAM/issues/48))**, appena
-implementato in questa sessione e non ancora verificato: serve ENV-W per creare
-deliberatamente un clone con `trino/catalog` root-owned e osservare che il
-preflight esteso lo rilevi (stesso protocollo a tre stati di P-11). Se confermato:
-#20 (gate di release, CHANGELOG → versione, README a fine release, tag) è
-l'ultimo passo della fase.
+**Prossimo passo**: **tutto lo scope di v0.0.2 è verificato su ENV-W con
+hardware reale** — P-1/P-3/P-4/P-9/P-10/P-11/P-12/P-13 chiusi e misurati; P-6
+e P-7 verificati solo staticamente (dichiarato esplicitamente, non
+nascosto). Il gate **#20** è stato eseguito da questa sessione: `CHANGELOG.md`
+promosso da `[Unreleased]` a `[v0.0.2] — 2026-08-27` con ogni riga che cita il
+suo riscontro (test automatico o misura ENV-W) e la qualificazione esplicita
+su T0.4/T0.5 (verdi a stack caldo, non una guardia di non-regressione
+affidabile finché non esiste #47); README aggiornato per le sole parti
+cambiate e coperte da test verde (endpoint Kafka duale, riproducibilità delle
+immagini, nuovo passo preflight), T0.12 verificato verde dopo ogni modifica.
+**Questa sessione non tagga**: il push innesca `ci-static`/`ci-smoke`, e se
+verdi il tag è dell'owner.
 
 ---
 
@@ -995,3 +1000,76 @@ nudo, come già fa l'healthcheck.
 - **Decisioni richieste all'owner**: nessuna nuova. Restano in sospeso quelle già aperte
   dalla sessione ENV-W (estensione finestra per T-SOAK-24h, formulazione del gate su
   T0.4/T0.5 "a stack caldo") — non di competenza di questa sessione.
+
+---
+
+## 2026-08-27 (quinta entry) — sessione cloud (nessun demone Docker) — sessione B, `claude-sonnet-5`
+
+- **Obiettivo della sessione**: eseguire il gate di release **#20** — P-13 verificato
+  su ENV-W (col protocollo a tre stati e una controprova sull'istanza reale), tutto lo
+  scope di v0.0.2 misurato su hardware reale, resta solo il gate.
+- **Fatto**:
+  - `git pull --rebase origin release/v0.0.2` per integrare i commit di ENV-W/
+    supervisione (verifica P-13, due regole di misura aggiunte a CLAUDE.md §5).
+  - `CHANGELOG.md`: sezione `[Unreleased]` promossa a `[v0.0.2] — 2026-08-27`.
+    Aggiunti "Che cosa rilascia questa versione", "Progression test dichiarato" (T0.6
+    misurato con modelli veri), "Run di riferimento" (le due nightly contro `6b377a3`),
+    la qualificazione esplicita su T0.4/T0.5 richiesta dal check-in, e un elenco dei
+    finding chiusi diviso fra "verificati su ENV-W" e "verificati solo staticamente"
+    (P-6, P-7) — nessuna riga afferma una verifica non avvenuta. Aggiornate le singole
+    righe di Changed/Added/Fixed con la citazione del riscontro (report ENV-W dove il
+    test è una misura, non un automatismo).
+  - `README.md`: tabella servizi e nota Kafka riscritte per il doppio listener
+    (`kafka:9092` interno, `localhost:29092` esterno) — il claim di v0.0.1 ("solo dalla
+    rete Docker") è diventato falso con #16 ed è stato corretto, non solo rimosso;
+    nuova nota sulla riproducibilità delle immagini (verificata da T-REPRO); nuova
+    sezione "Preflight check (recommended)" nei Prerequisites; `preflight.sh`/`.ps1`
+    aggiunti al Repository Layout.
+- **Decisioni prese**:
+  - **Non toccato il Quick Start per la storia dei permessi**: il README non aveva mai
+    documentato P-9 (nessun workaround `chmod` scritto da correggere) — non c'era nulla
+    diventato falso, quindi l'eccezione di CLAUDE.md §4 sulla correzione di un claim
+    falso non si applica; aggiungere una menzione sarebbe stata narrazione, non verità
+    documentale.
+  - **Divisione esplicita fra finding verificati su ENV-W e verificati solo
+    staticamente** (P-6, P-7) nel CHANGELOG, invece di una riga unica "tutto verificato
+    su hardware reale": P-6 non è riproducibile su ENV-W per costruzione (la Z8 ha già
+    `vm.max_map_count` configurato, come la review aveva già osservato), e affermare il
+    contrario avrebbe violato esattamente il principio ("il report comanda sul
+    documento") su cui si fonda questo progetto.
+  - **Nota di riproducibilità delle immagini aggiunta al README** anche se non era
+    già presente come claim falso da correggere: il criterio "cambiato e coperto da
+    test verde" (T-REPRO) è soddisfatto, ed è direttamente l'obiettivo O3 di questa
+    release — un'omissione qui avrebbe significato non dichiarare un comportamento
+    reale e testato, non un rischio di verità documentale ma un'occasione persa.
+- **Test eseguiti**:
+  - `bash bench/t0/run.sh --suite static` (rieseguito ad ogni modifica sostanziale,
+    non solo alla fine) → `T0.1 PASS, T0.12 PASS, T-REPRO PASS` in ogni run, nessuna
+    regressione — in particolare T0.12 verde sia dopo l'edit della tabella Kafka sia
+    dopo l'aggiunta del Repository Layout.
+  - `docker compose -f ... config -q` su tutte le combinazioni (base; +addon;
+    +addon+gpu; +addon+mock-ollama) → tutte valide.
+  - `yamllint -c .yamllint.yml .` e `ruff check stream-agent/ data-generator/ bench/`
+    → puliti (invariato).
+  - **Non eseguito**: nessun run T0 comportamentale reale (nessun demone Docker in
+    questa sessione) — la misura di riferimento resta quella di ENV-W già citata nel
+    CHANGELOG.
+- **Costo della sessione**: `claude-sonnet-5` (come configurato), stessa sessione
+  delle entry precedenti — turno ripreso dopo il check-in del gate di release.
+- **Non funziona / sospeso**: nulla di nuovo rispetto a "Aperto" in testa —
+  `bench/soak/lib/sample.py` (sessione A), `preflight.ps1` mai collaudato su
+  PowerShell reale, #47 (warm-up gate) ancora da implementare (Fase 3).
+- **Prossimo passo per la sessione successiva**: verificare che `ci-static`/
+  `ci-smoke` siano verdi sul push di questa entry (nessuna modifica comportamentale
+  allo stack: solo testo di CHANGELOG/README). **Questa sessione non tagga** — per
+  direttiva esplicita del check-in, il tag è dell'owner una volta confermato il
+  verde. Se verde, la Fase 1 è chiusa nella sostanza: resta solo l'operazione di tag
+  e l'apertura della Fase 2.
+- **Decisioni richieste all'owner**:
+  1. **Il tag `v0.0.2`**: le sessioni cloud prendono 403 dal proxy git sui tag (lezione
+     di Fase 0) — va apposto dall'owner o da una sessione locale, dopo la conferma
+     verde di `ci-static`/`ci-smoke` su questo push.
+  2. Restano in sospeso quelle già aperte dalla sessione ENV-W (estensione finestra
+     per T-SOAK-24h, se e quando riprenderla; formulazione permanente del gate su
+     T0.4/T0.5 "a stack caldo" per le release future) — non di competenza di questa
+     sessione né bloccanti per il tag di v0.0.2.

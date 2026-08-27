@@ -1,0 +1,11 @@
+# Test harness output: only the summaries in docs/runs/ are committed,
+# the raw run artifacts live outside the repository (piano_ricovero.md, 3).
+results/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Local model selection: copy .env.example to .env and adjust.
+# Keeping it untracked means switching tier never dirties the working tree.
+.env

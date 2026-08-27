@@ -44,7 +44,7 @@ services:
       interval: 15s
       timeout: 10s
       retries: 10
- 
+
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: northstream-kafka-ui
@@ -64,7 +64,7 @@ services:
         condition: service_started
       debezium-connect:
         condition: service_started
- 
+
   schema-registry:
     image: apicurio/apicurio-registry:3.0.9
     container_name: northstream-schema-registry
@@ -77,7 +77,7 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
- 
+
   # ------------------------------------------------------------
   # OPERATIONAL SOURCE + CDC / INTEGRATION LAYER
   # ------------------------------------------------------------
@@ -141,7 +141,7 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
- 
+
   # ------------------------------------------------------------
   # STREAM PROCESSING LAYER
   # ------------------------------------------------------------
@@ -154,7 +154,7 @@ services:
     command: jobmanager
     environment:
       JOB_MANAGER_RPC_ADDRESS: flink-jobmanager
- 
+
   flink-taskmanager:
     image: flink:1.19.1-scala_2.12
     container_name: northstream-flink-taskmanager
@@ -165,7 +165,7 @@ services:
     environment:
       JOB_MANAGER_RPC_ADDRESS: flink-jobmanager
       TASK_MANAGER_NUMBER_OF_TASK_SLOTS: 4
- 
+
   # ------------------------------------------------------------
   # LAKEHOUSE FOUNDATION LAYER
   # ------------------------------------------------------------
@@ -182,7 +182,7 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
- 
+
   create-minio-bucket:
     image: minio/mc:latest
     container_name: northstream-create-minio-bucket
@@ -197,7 +197,7 @@ services:
       mc mb -p local/curated-data || true;
       exit 0;
       "
- 
+
   trino:
     image: trinodb/trino:463
     container_name: northstream-trino
@@ -208,7 +208,7 @@ services:
       - ./trino/catalog:/etc/trino/catalog:ro
     depends_on:
       - minio
- 
+
   # ------------------------------------------------------------
   # DATA INTELLIGENCE / GOVERNANCE LAYER
   # ------------------------------------------------------------
@@ -227,7 +227,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
- 
+
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
     container_name: northstream-elasticsearch
@@ -245,7 +245,7 @@ services:
       interval: 15s
       timeout: 10s
       retries: 20
- 
+
   execute-migrate-all:
     image: openmetadata/server:1.7.0
     container_name: northstream-openmetadata-migrate
@@ -301,8 +301,8 @@ services:
         condition: service_healthy
       execute-migrate-all:
         condition: service_completed_successfully
- 
- 
+
+
   # ------------------------------------------------------------
   # AI / CHAT WITH DATA LAYER
   # ------------------------------------------------------------
@@ -314,7 +314,7 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
- 
+
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     container_name: northstream-open-webui
@@ -328,7 +328,7 @@ services:
       - open_webui_data:/app/backend/data
     depends_on:
       - ollama
- 
+
 volumes:
   kafka_data:
   postgres_data:

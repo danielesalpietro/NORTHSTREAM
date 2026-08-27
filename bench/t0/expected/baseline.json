@@ -1,0 +1,28 @@
+{
+  "target": "v0.0.0-baseline",
+  "source": "docs/piano_ricovero.md section 4.1",
+  "description": "Expected outcome of every T0 test on the baseline tag. XFAIL entries name the finding they record and the release that must flip them to PASS.",
+  "expected": {
+    "T0.1": "PASS",
+    "T0.2": "PASS",
+    "T0.3": "PASS",
+    "T0.4": "PASS",
+    "T0.5": "PASS",
+    "T0.6": "XFAIL",
+    "T0.7": "XFAIL",
+    "T0.8": "XFAIL",
+    "T0.9": "XFAIL",
+    "T0.10": "XFAIL",
+    "T0.11": "XFAIL",
+    "T0.12": "XFAIL"
+  },
+  "flips": {
+    "T0.6": "v0.0.2 (P-1)",
+    "T0.7": "v0.0.3 (P-2)",
+    "T0.8": "v0.0.4 (A-3)",
+    "T0.9": "v0.0.4 (A-2)",
+    "T0.10": "v0.0.4 (A-1)",
+    "T0.11": "v0.0.4 (A-5)",
+    "T0.12": "v0.0.1 (D-1, D-2, P-1 doc)"
+  }
+}

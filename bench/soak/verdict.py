@@ -139,6 +139,8 @@ def check_rss(samples, ceiling_mib):
         total = 0.0
         any_value = False
         for name, stats in containers.items():
+            if name.startswith("_"):  # metadata keys (_error, _warnings), not a container
+                continue
             rss = stats.get("rss_mib")
             if rss is None:
                 continue

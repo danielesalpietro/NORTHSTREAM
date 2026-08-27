@@ -70,9 +70,20 @@ def sample_qdrant(url, collection):
         return {"collection": collection, "points_count": None, "error": str(exc)}
 
 
+# The only two values this query can legitimately produce for a slot's
+# active flag (see the CASE in the query below, which pins the encoding
+# instead of trusting how `active || ':'` happens to stringify a boolean —
+# that produced literal 'true'/'false' against real Postgres, not the 't'/'f'
+# the parser expected, and a naive `== "t"` comparison then silently reads
+# EVERY slot as inactive: a constant masquerading as a measurement, worse
+# than a missing field because it looks like real data).
+_SLOT_ACTIVE = {"t": True, "f": False}
+
+
 def sample_postgres(container, db, user):
     query = (
-        "SELECT 'slot:' || slot_name || ':' || active || ':' || "
+        "SELECT 'slot:' || slot_name || ':' || "
+        "(CASE WHEN active THEN 't' WHEN NOT active THEN 'f' ELSE 'u' END) || ':' || "
         "COALESCE(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn), 0) "
         "FROM pg_replication_slots "
         "UNION ALL SELECT 'table:sensor_readings:' || count(*) FROM sensor_readings "
@@ -80,27 +91,38 @@ def sample_postgres(container, db, user):
     )
     out, err = run(["docker", "exec", container, "psql", "-U", user, "-d", db, "-tA", "-c", query])
     if err:
-        return {"replication_slots": [], "table_counts": {}, "error": err}
+        return {"replication_slots": [], "table_counts": {}, "warnings": [], "error": err}
 
     slots = []
     tables = {}
+    warnings = []
     for line in out.splitlines():
         line = line.strip()
         if not line:
             continue
         parts = line.split(":")
         if parts[0] == "slot" and len(parts) == 4:
-            _, slot_name, active, retained = parts
+            _, slot_name, active_raw, retained = parts
+            # A value outside the two the query can produce is never coerced
+            # to a boolean: it is recorded as unknown, with a warning, so it
+            # cannot be mistaken for a real "inactive" reading.
+            if active_raw in _SLOT_ACTIVE:
+                active = _SLOT_ACTIVE[active_raw]
+            else:
+                active = None
+                warnings.append(f"slot {slot_name}: unrecognized active value {active_raw!r}, recorded as unknown")
             slots.append({
                 "slot_name": slot_name,
-                "active": active == "t",
+                "active": active,
                 "retained_bytes": int(retained) if retained.isdigit() else None,
             })
         elif parts[0] == "table" and len(parts) == 3:
             _, table, count = parts
             tables[table] = int(count) if count.isdigit() else None
+        else:
+            warnings.append(f"unrecognized row from replication/count query: {line!r}")
 
-    return {"replication_slots": slots, "table_counts": tables, "error": None}
+    return {"replication_slots": slots, "table_counts": tables, "warnings": warnings, "error": None}
 
 
 def parse_mem_usage(text):
@@ -131,11 +153,22 @@ def sample_containers(prefix):
         return {"_error": err}
 
     containers = {}
+    warnings = []
     for line in stats_out.splitlines():
         if "\t" not in line:
+            warnings.append(f"unparsed docker stats line: {line!r}")
             continue
         name, mem = line.split("\t", 1)
         containers[name] = {"rss_mib": parse_mem_usage(mem)}
+
+    # A container docker ps saw but docker stats did not report for is a real
+    # gap, not "no data": surface it instead of letting it disappear as if it
+    # had never been asked for.
+    missing = sorted(set(names) - set(containers))
+    if missing:
+        warnings.append(f"docker ps listed but docker stats did not report: {missing}")
+    if warnings:
+        containers["_warnings"] = warnings
     return containers
 
 
@@ -171,6 +204,8 @@ def sample_host():
     else:
         gpus = []
         for line in gpu_out.splitlines():
+            if not line.strip():
+                continue
             parts = [p.strip() for p in line.split(",")]
             if len(parts) == 3 and all(p.isdigit() for p in parts):
                 gpus.append({
@@ -178,11 +213,34 @@ def sample_host():
                     "memory_used_mib": int(parts[1]),
                     "memory_total_mib": int(parts[2]),
                 })
+            else:
+                errors.append(f"nvidia-smi: unparsed gpu line {line!r}")
         result["gpu"] = gpus
 
     if errors:
         result["error"] = "; ".join(errors)
     return result
+
+
+def collect_diagnostics(sample):
+    """Flatten every subsystem's error/warning into one-line diagnostics, so a
+    problem is visible in soak.err.log (run.sh redirects this script's stderr
+    there) as soon as it happens rather than discovered by reading 24 hours of
+    samples.jsonl after the fact. This is the general form of the "active"
+    bug: any silent per-field default is exactly what stays invisible."""
+    lines = []
+    for section in ("qdrant", "postgres", "host"):
+        err = sample[section].get("error")
+        if err:
+            lines.append(f"{section}: {err}")
+    for warning in sample["postgres"].get("warnings", []):
+        lines.append(f"postgres: {warning}")
+    containers = sample["containers"]
+    if "_error" in containers:
+        lines.append(f"containers: {containers['_error']}")
+    for warning in containers.get("_warnings", []):
+        lines.append(f"containers: {warning}")
+    return lines
 
 
 def main():
@@ -205,6 +263,9 @@ def main():
         "containers": sample_containers(args.container_prefix),
         "host": sample_host(),
     }
+
+    for diagnostic in collect_diagnostics(sample):
+        print(f"sample {args.seq}: {diagnostic}", file=sys.stderr)
 
     line = json.dumps(sample, sort_keys=True) + "\n"
     if args.out:

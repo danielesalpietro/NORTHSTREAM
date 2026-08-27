@@ -50,6 +50,17 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
   contratto congelato della baseline, non si piega ai risultati di release
   successive — CLAUDE.md §3.8/decisioni Fase 0).
 
+- `docker-compose-northstream-ai.yml`, `docker-compose.addon.yml`,
+  `bench/ci/mock-ollama.yml`: tutti i port mapping passano da
+  `porta:porta` (pubblicato su `0.0.0.0`) a `127.0.0.1:porta:porta` — 17
+  porte in totale, comprese quelle appena introdotte da #16 e #17.
+  Rende vero il claim "local testing only" del README (P-7,
+  [#18](https://github.com/danielesalpietro/NORTHSTREAM/issues/18)).
+  Verificato programmaticamente su `docker compose config`: ogni porta
+  pubblicata ha `host_ip: 127.0.0.1`; `localhost` risolve comunque a
+  `127.0.0.1` sull'host, quindi T0.6 (`localhost:29092`) e `ci-smoke`
+  (che gira `curl` sullo stesso host dei container) restano coerenti.
+
 ### Fixed
 - `bench/t0/lib/doc_truth.py`: `kafka_advertises_host()` cercava solo la
   chiave Bitnami `KAFKA_CFG_ADVERTISED_LISTENERS`. Dopo la migrazione a

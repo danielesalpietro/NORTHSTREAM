@@ -8,7 +8,55 @@ Regola (da `CLAUDE.md` §4): ogni commit che cambia comportamento aggiunge una r
 sotto `[Unreleased]` citando il finding o l'obiettivo che chiude; al rilascio la
 sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 
-## [Unreleased]
+## [v0.0.2] — 2026-08-27
+
+**Che cosa rilascia questa versione**: raggiungibilità e riproducibilità dello
+stack (obiettivo O3 del piano). Kafka è raggiungibile dall'host come il README
+promette da sempre, senza più il divario fra racconto e comportamento aperto
+da P-1 in v0.0.1; le immagini sono pinnate a versione+digest invece di tag
+mobili; tutte le porte sono legate a `127.0.0.1` invece che a `0.0.0.0`; un
+preflight fallisce con causa/sintomo/rimedio invece di lasciar morire un
+container in silenzio. Il lavoro ha anche scoperto e chiuso, nello stesso giro
+di verifica su hardware reale, una classe di difetti che nessuna quantità di
+CI verde poteva vedere: P-11/P-12/P-13, lo stesso meccanismo — Docker che gira
+come root e lascia in giro stato che l'utente non può toccare — visto da tre
+lati (un volume, una directory su un workspace CI, la stessa directory dentro
+un clone esistente).
+
+**Progression test dichiarato**: **T0.6** (client host ottiene metadata
+Kafka utilizzabili) da XFAIL a **PASS** — misurato **con modelli veri**, non
+solo in CI con mock-ollama: due nightly reali consecutive su ENV-W contro
+`6b377a3` danno T0.6 PASS in entrambe (`broker 1 at localhost:29092`).
+
+**Run di riferimento**: [`docs/runs/20260827-1148-envw-6b377a3.md`](docs/runs/20260827-1148-envw-6b377a3.md)
+— due nightly consecutive su ENV-W in stato **esclusivo**, suite `full` con
+modelli reali. T0.6 PASS in entrambe; T0.2/T0.3 PASS in entrambe (nessuna
+regressione dal cambio immagine di #17/#18); `actions/checkout` verde in
+entrambe (P-12 dimostrato sul workspace CI). Il metro resta
+[`docs/runs/20260826-2053-envw-5eb456a-baseline.md`](docs/runs/20260826-2053-envw-5eb456a-baseline.md)
+(baseline, 5 PASS + 6 XFAIL + 1 XPASS): tutti e cinque i PASS di riferimento
+restano PASS in questa release, nessuna regressione.
+
+**Qualificazione da riportare, non da nascondere**: nelle due nightly di
+riferimento, T0.4 e T0.5 concludono `failure` **a stack freddo**, con tre
+insiemi diversi di FAIL su tre run distinti — non è una regressione di questa
+release (è la finestra cieca di A-8, [#39](https://github.com/danielesalpietro/NORTHSTREAM/issues/39)),
+ed **entrambi passano 2 volte su 2 a stack caldo** (attesa di 6 minuti oltre
+la finestra A-8). Ma "non è una regressione" e "la nightly è una guardia di
+non-regressione affidabile" sono due affermazioni diverse, e solo la prima è
+dimostrata: finché non esiste un *warm-up gate*
+([#47](https://github.com/danielesalpietro/NORTHSTREAM/issues/47)), un FAIL
+di T0.4/T0.5 sulla nightly a freddo non è interpretabile da solo.
+
+**Finding chiusi in questa release**. Verificati su ENV-W con hardware (e,
+dove rilevante, modelli) reali, non solo in CI con mock-ollama o
+staticamente: **P-1** (#16), **P-3/P-4** (#17), **P-9** (#41), **P-10** (#42),
+**P-11** (#45), **P-12** (#46), **P-13** (#48). Verificati solo staticamente
+in questa sessione (nessun demone Docker) e non su ENV-W — **P-6** (#19: la
+Z8 ha già `vm.max_map_count` preconfigurato, quindi non riproduce il difetto
+che il preflight rileva, coerentemente con quanto la review aveva già
+osservato) e **P-7** (#18: verificato via `docker compose config`, non con un
+tentativo di connessione dalla LAN).
 
 ### ⚠ Breaking (lab esistenti) — leggere PRIMA di `git pull`
 
@@ -63,10 +111,10 @@ aggiornata sulla macchina.
   `apache/kafka:4.3.1`, pinnato a versione+digest (P-3, P-4, O3.2,
   [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)). Le env
   `KAFKA_CFG_*` di Bitnami diventano `KAFKA_*` nel formato dell'immagine
-  ufficiale Apache; comportamento del broker (singolo listener `PLAINTEXT`,
-  ancora irraggiungibile dall'host) **invariato** in questo commit — il doppio
-  listener è #16, deliberatamente separato per non riscrivere la stessa
-  configurazione due volte su due immagini diverse.
+  ufficiale Apache. **Verificato**: T0.2/T0.3 (consumo CDC interno) PASS in
+  due nightly reali consecutive su ENV-W —
+  [`docs/runs/20260827-1148-envw-6b377a3.md`](docs/runs/20260827-1148-envw-6b377a3.md)
+  — nessuna regressione dal cambio immagine.
 - `docker-compose-northstream-ai.yml` e `docker-compose.addon.yml`: le altre
   sette immagini oggi su `:latest`/tag mobili pinnate a versione+digest —
   `kafka-ui` (`v0.7.2`), `adminer` (`5.5.1`), `minio` (`RELEASE.2025-09-07T16-13-09Z`),
@@ -74,6 +122,7 @@ aggiornata sulla macchina.
   `open-webui` (`v0.11.1`) — digest risolti via API del registry (token anonimo
   Docker Hub / GHCR), nessun demone Docker disponibile in questa sessione
   (P-4, O3.2, [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)).
+  **Verificato**: nuovo test **T-REPRO** (v. sotto), PASS in ogni run statico.
 - `docker-compose-northstream-ai.yml`: doppio listener Kafka — `INTERNAL`
   (`kafka:9092`, usato dagli altri servizi del compose) ed `EXTERNAL`
   (`localhost:29092`, pubblicato per un client sull'host), con
@@ -81,6 +130,9 @@ aggiornata sulla macchina.
   `PLAINTEXT` annunciato come `kafka:9092` a tutti, compreso l'host — la causa
   esatta di P-1 (T0.6). Progression test dichiarato della release: **T0.6
   XFAIL → PASS** (P-1, O3.1, [#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16)).
+  **Verificato con modelli veri**, non solo mock-ollama: T0.6 PASS in due
+  nightly reali consecutive su ENV-W —
+  [`docs/runs/20260827-1148-envw-6b377a3.md`](docs/runs/20260827-1148-envw-6b377a3.md).
 - `bench/t0/run.sh`: **T0.6 promosso nella suite `ci`** (oltre a `core`/`full`),
   così il progression test della release gira a ogni push via `ci-smoke`
   invece di aspettare la nightly su ENV-W — requisito esplicito del piano
@@ -136,17 +188,21 @@ aggiornata sulla macchina.
   `WARN`, non un falso positivo
   ([#45](https://github.com/danielesalpietro/NORTHSTREAM/issues/45)).
   **Non verificabile in CI per costruzione** (`ci-smoke`/`ci-nightly`
-  partono sempre da un volume inesistente, l'unico caso che funziona): la
-  logica di branching (nessun volume / scrivibile / non scrivibile / errore
-  generico) è stata verificata in questa sessione con un `docker` finto che
-  simula le quattro risposte; **la verifica reale, con un volume creato
-  deliberatamente con la proprietà vecchia, spetta a ENV-W**.
+  partono sempre da un volume inesistente, l'unico caso che funziona).
+  **Verificato su ENV-W sui tre stati reali**: volume assente → `OK`,
+  exit 0; volume ricreato con la vecchia proprietà (`0:0` modo 775, file
+  `1001:0`) → `FAIL` con causa/sintomo/rimedio, exit 1; volume creato
+  dalla nuova immagine → `OK`, exit 0. Il preflight **discrimina**, non
+  fallisce a prescindere.
 - `trino/catalog/.gitkeep` — la directory non esisteva nel repository
   (metà del finding P-2): Docker la creava `root:root` al primo `up` sul
   runner self-hosted, e alla nightly successiva `actions/checkout` moriva
   con `EACCES` nel ripulire il workspace (**P-12**,
   [#46](https://github.com/danielesalpietro/NORTHSTREAM/issues/46)). Con
   la directory già presente in git, Docker non la ricrea come root.
+  **Verificato su ENV-W**: due nightly consecutive sullo stesso workspace,
+  `actions/checkout` verde in entrambe —
+  [`docs/runs/20260827-1148-envw-6b377a3.md`](docs/runs/20260827-1148-envw-6b377a3.md).
 - `preflight.sh` / `preflight.ps1`: nuovo controllo per **P-13** — cerca
   directory non scrivibili dall'utente corrente nell'albero del
   repository (`find -type d -not -writable` / un test di scrittura reale
@@ -155,15 +211,12 @@ aggiornata sulla macchina.
   root invece di un volume, ma con lo stesso effetto — bloccare `git
   pull`/`git checkout` con `Permission denied` a metà operazione
   ([#48](https://github.com/danielesalpietro/NORTHSTREAM/issues/48)).
-  **Verificato in questa sessione** creando deliberatamente una directory
-  realmente non scrivibile (flag `chattr +i`, dato che questa sandbox gira
-  come root e un normale cambio di proprietario non l'avrebbe bloccata) in
-  un clone temporaneo: il controllo la rileva e fallisce col messaggio
-  corretto; ripristinata la scrivibilità, il controllo torna `OK`.
-  **La verifica sul meccanismo reale (proprietà `root:root` da Docker,
-  utente non privilegiato) non è verificabile in CI per costruzione — v.
-  P-11 — e spetta a ENV-W**, con lo stesso protocollo a tre stati (assente
-  / condizione rotta creata deliberatamente / condizione sana).
+  **Non verificabile in CI per costruzione, come P-11.** **Verificato su
+  ENV-W** con lo stesso protocollo a tre stati di P-11, **più una
+  controprova sull'istanza reale**: il preflight è stato puntato sul
+  clone reale che quella mattina non riusciva più a fare `git pull`, e ha
+  rilevato entrambe le directory compromesse — il controllo cattura il
+  caso vero, non solo un'imitazione sintetica.
 
 ### Fixed
 - `bench/t0/lib/doc_truth.py`: `kafka_advertises_host()` cercava solo la
@@ -196,6 +249,9 @@ aggiornata sulla macchina.
   Corregge la regressione di T0.2/T0.3 introdotta da #17
   ([#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16),
   [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)).
+  **Verificato**: `ci-smoke` tornato verde sul push successivo, e T0.2/T0.3
+  confermati PASS con modelli veri in due nightly reali su ENV-W —
+  [`docs/runs/20260827-1148-envw-6b377a3.md`](docs/runs/20260827-1148-envw-6b377a3.md).
 
 ## [v0.0.1] — 2026-08-26
 

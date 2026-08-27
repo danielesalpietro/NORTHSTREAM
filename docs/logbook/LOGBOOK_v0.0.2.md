@@ -191,3 +191,120 @@ l'unico BLOCKER della review ancora aperto sul comportamento.
 - **Non funziona / sospeso**: nulla di nuovo.
 - **Prossimo passo per la sessione successiva**: invariato — aprire `release/v0.0.2`
   da `develop` e avviare #16 su `claude-sonnet-5`.
+
+---
+
+## 2026-08-27 (quarta entry) — sessione remota (cloud, nessun ambiente di
+esecuzione) — Sessione A, fuori scope Fase 1
+
+- **Nota di collocazione**: questa entry documenta lavoro **non di Fase 1**, per la
+  regola `CLAUDE.md` §3.2 ("annotare nel logbook della fase che ospita il lavoro
+  anticipato, citando la fase che lo consumerà"). #41 e #42 (lo scope reale di
+  questa sessione in Fase 1) sono chiusi — v. terza entry sopra. Questo lavoro è
+  arrivato via un nuovo compito della supervisione durante una finestra di
+  manutenzione ENV-W dichiarata dall'owner, ed è **infrastruttura di test per
+  v0.0.4** (T-SOAK-24h), non una modifica al sistema: ammessa in anticipo dalla
+  stessa regola §3.2 (a). Branch **`feature/soak-harness`**, aperto da `develop`
+  @ `7ae7181` — **non** `release/v0.0.2` — perché non è scope della release
+  corrente.
+- **Obiettivo della sessione**: costruire `bench/soak/`, l'harness di
+  campionamento di **T-SOAK-24h** (`docs/piano_ricovero.md` §4.3), così la
+  finestra di manutenzione ENV-W (12+ ore, prenotata dall'owner) possa misurare
+  invece di aspettare che il codice sia pronto.
+- **Fatto** (commit `e22f88b` su `feature/soak-harness`):
+  - `bench/soak/lib/sample.py` — un campione per invocazione: `points_count` di
+    Qdrant, `pg_replication_slots` + conteggio righe (`sensor_readings`,
+    `orders`) via `docker exec psql`, RSS per container `northstream-*` via
+    `docker stats --no-stream`, più load average/RAM libera/VRAM per issue
+    **#44**. Ogni sottosistema è isolato in un proprio try/except: un
+    fallimento produce un campo `error` e un valore nullo, mai un crash.
+  - `bench/soak/run.sh` — orchestratore: loop a intervallo fisso (default 60 s),
+    scrittura append-only una riga per campione, `trap` su `SIGINT`/`SIGTERM`
+    per fermarsi in modo pulito dopo il campione in corso. Riusa le convenzioni
+    `RUN_ID`/`manifest.json` già stabilite da `bench/t0/run.sh` invece di
+    inventarne di nuove.
+  - `bench/soak/verdict.py` — script separato che trasforma `samples.jsonl` in
+    un verdetto sulle quattro verifiche del piano, più un riepilogo descrittivo
+    di esclusività host per #44.
+  - `bench/soak/README.md` — uso e schema dei campioni.
+- **Decisioni prese** (e perché — alternative scartate):
+  - **Due delle quattro verifiche (crescita Qdrant vs retention, RSS vs tier)
+    restano `UNKNOWN` finché non si passa esplicitamente una soglia** via
+    `--max-replication-mib` / `--rss-ceiling-mib`, invece di un default
+    inventato. *Motivo*: la retention non è implementata, e l'unico tetto RSS
+    dichiarato nel piano (T-PROF, v0.0.3) vale per il profilo `core`, non per lo
+    stack pieno che un soak esercita. Un numero senza base nel piano
+    sembrerebbe un gate reale e non lo è — meglio dichiararlo esplicitamente
+    sconosciuto che fabbricare falsa fiducia. *Alternativa scartata*: un
+    default "ragionevole" hardcoded — scartata perché indistinguibile, nel
+    report, da una soglia realmente decisa.
+  - **Le altre due verifiche (dimensione replication slot con soglia esplicita,
+    eventi persi DB-vs-Qdrant) restano invece verdetti reali**, calcolate dal
+    delta fra primo e ultimo campione valido: non richiedono una soglia esterna
+    per essere significative.
+  - **`host_exclusivity` in `verdict.py` è solo descrittivo**, non implementa il
+    pre-check/classificatore di #44 (min/max VRAM, RAM, load per campione, zero
+    logica di gate). *Motivo*: #44 è issue propria di Fase 2 (v0.0.3) con una
+    definition of done più ampia (pre-check che blocca un run, marcatura
+    "contaminato" a metà run, campo `exclusive/shared/unknown` nel manifest);
+    implementarla qui sarebbe uscire dallo scope assegnato di questa sessione
+    (il campionamento) invadendo quello di un'altra issue. Il compito
+    assegnato chiedeva esplicitamente solo "VRAM, RAM libera e load a ogni
+    campione" — fatto — non la classificazione.
+  - **Ogni riga è un singolo `write()` con `flush()`+`fsync()`**, non un buffer
+    che si scrive a intervalli o a fine run: è il modo con cui un campione
+    resta leggibile anche se il processo muore a metà (requisito esplicito del
+    compito — "se il run muore alla ventitreesima ora, le prime 22 devono
+    restare leggibili").
+  - **Nessuna riga di CHANGELOG.md per questo commit.** `CLAUDE.md` §4 esenta i
+    commit solo-documentazione, ma questo è codice — la ragione è un'altra:
+    l'`[Unreleased]` di `CHANGELOG.md` è scope di `release/v0.0.2`
+    (`Fase 1`), e questo branch non è quella release. L'aggiunta di
+    `bench/soak/` avrà la sua riga quando **v0.0.4** la userà davvero, non ora
+    — altrimenti il changelog di una release racconterebbe lavoro di un'altra,
+    esattamente il difetto D-1 da cui è nata la review.
+- **Test eseguiti** (nessun ambiente Docker in questa sessione — v. `CLAUDE.md`
+  §5, "si limita a lavoro statico"):
+  - `bash -n bench/soak/run.sh` → sintassi valida. `python3 -m py_compile` su
+    `sample.py` e `verdict.py` → sintassi valida. `ruff check bench/soak/` →
+    pulito dopo la correzione di due `E731` (lambda → `def`).
+  - **Prova a secco richiesta dal compito** (10 min a intervallo ridotto, poi
+    ripetuta a 6 s dopo il fix ruff): `bench/soak/run.sh --interval 2|3
+    --duration 6|10` senza demone Docker in questa sandbox → 3 campioni
+    prodotti, ognuno con i sottosistemi Docker/Qdrant degradati a `error`
+    esplicito (nessun crash), `host` comunque popolato (load, RAM; niente GPU,
+    coerente — sandbox senza `nvidia-smi`). `verdict.py` sui campioni →
+    `UNKNOWN` sulle quattro verifiche (nessun dato Docker) più il riepilogo
+    host, exit 0. **Test del segnale**: `SIGTERM` a metà run (dopo 3 campioni)
+    → uscita pulita, `samples.jsonl` con 3 righe, tutte JSON valido. Verifica
+    superata nei limiti di questa sandbox: **la prova a secco vera, con lo
+    stack acceso, resta da fare sulla Z8** — è quanto il compito stesso
+    prevedeva ("non hai Docker in questa sessione... la prova a secco vera la
+    farà la Z8").
+  - Non-regressione: nessun file fuori da `bench/soak/` toccato.
+- **Costo della sessione**: `claude-sonnet-5` (configurato e servito, nessun
+  fallback). Da `get_session` alla chiusura di questo compito: **7.351.495
+  token di cache read**, **235.465 di cache write**, **33.019 di output**,
+  **2,74 $** nozionali (abbonamento MAX). Durata di sessione dalla creazione:
+  ~1 h 37 min (08:39Z–10:16Z) — include anche il lavoro su #41/#42 di questa
+  stessa sessione, non scorporabile a posteriori (v. `CLAUDE.md` §7 sulla
+  lunghezza di sessione come driver di costo dominante).
+- **Non funziona / sospeso**: la prova a secco reale su ENV-W (stack acceso)
+  non è stata eseguita da questa sessione — nessun accesso a ENV-W. Consegnata
+  alla sessione ENV-W come riportato sotto.
+- **Prossimo passo per la sessione successiva**: sulla Z8, dentro `tmux`,
+  checkout di `feature/soak-harness` e:
+  ```sh
+  tmux new -s northstream-soak
+  git fetch origin feature/soak-harness && git checkout feature/soak-harness
+  bench/soak/run.sh --interval 30 --duration 600 --env envw   # prova a secco, 10 min
+  python3 bench/soak/verdict.py --samples results/<RUN_ID>/samples.jsonl \
+      --manifest results/<RUN_ID>/manifest.json --report results/<RUN_ID>
+  ```
+  Se la prova a secco è verde (campioni leggibili, verdetto calcolato, nessun
+  crash), la finestra di manutenzione prenotata parte con
+  `bench/soak/run.sh --interval 60 --duration 86400 --env envw` sotto `tmux`.
+  Consigliato: lanciare **T-SOAK-24h insieme** allo stack pieno (`--gpu`) così
+  la finestra dà anche la prima misura "prima" citata in piano §6-bis.
+- **Decisioni richieste all'owner**: nessuna — il branch e lo scope erano già
+  decisi dalla supervisione nel compito assegnato.

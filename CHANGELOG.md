@@ -10,11 +10,15 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 
 ## [Unreleased]
 
-*(Nessuna voce: la prossima release è v0.0.2 — Fase 1, raggiungibilità e
-riproducibilità. Finding già confermati e in coda: **P-9** script del Quick Start
-non eseguibili su clone pulito ([#41](https://github.com/danielesalpietro/NORTHSTREAM/issues/41)),
-**P-10** teardown di `ci-nightly` che cancella `ollama_data`
-([#42](https://github.com/danielesalpietro/NORTHSTREAM/issues/42)).)*
+### Fixed
+- Bit di esecuzione impostato sui tre script del Quick Start (`start-addon.sh`,
+  `register-connector.sh`, `demo-compare.sh`), committati `100644` invece di
+  `100755`: su un clone pulito il primo comando del Quick Start falliva con
+  `Permission denied` (exit 126) (P-9, [#41](https://github.com/danielesalpietro/NORTHSTREAM/issues/41)).
+- Teardown di `ci-nightly` non usa più `down -v`: rimuove esplicitamente solo i
+  volumi di stato esercitati dalla suite T0 (Kafka, Postgres, Qdrant),
+  preservando `ollama_data` — evita di ricancellare i modelli Granite a ogni
+  notte (P-10, [#42](https://github.com/danielesalpietro/NORTHSTREAM/issues/42)).
 
 ## [v0.0.1] — 2026-08-26
 

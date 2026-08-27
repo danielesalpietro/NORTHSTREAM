@@ -377,3 +377,89 @@ soak, fuori scope Fase 1 (stessa collocazione della quarta entry)
   `feature/soak-harness` (ora a `2b4f4ad`) e ripetere la prova a secco di 10
   minuti prima del soak pieno — v. comando nella quarta entry, invariato.
 - **Decisioni richieste all'owner**: nessuna.
+
+---
+
+## 2026-08-27 (sesta entry) — sessione remota (cloud) — Sessione A, exclusivity
+e stato pipeline nel manifest del soak (stessa collocazione, anticipo di #44)
+
+- **Contesto**: il fix della quinta entry è stato verificato con successo su
+  ENV-W (`active` legge `False` reale quando lo slot è davvero fermato, `True`
+  quando è attivo — 5/5 sonde, `warnings` sempre vuoto). Il soak parziale è
+  **partito alle 14:06:35Z, gira fino alle 21:30Z sotto la versione già
+  pushata**: questa sessione non lo tocca. La supervisione ha trovato durante
+  l'avvio che `manifest.json` scriveva `"exclusivity": "unknown"` come
+  costante cablata, senza raccogliere stato del connettore/slot: ENV-W li ha
+  scritti a mano sotto una chiave `operator_recorded`, dichiarata come
+  inserimento manuale — scelta giusta per non far credere che l'harness li
+  raccogliesse da solo. Questo lavoro chiude il gap per il **prossimo** run
+  (T-SOAK-24h vero), non tocca quello in corso.
+- **Fatto** (commit `fe91a74` su `feature/soak-harness`):
+  - **`--exclusivity exclusive|shared|unknown`** (default `unknown`) su
+    `run.sh`, scritto in `manifest.json` al posto della costante. Dichiarato
+    da chi lancia il run, mai inferito.
+  - **`sample.py --mode init`**: raccolta one-shot allo start del run —
+    stato del connettore CDC (Kafka Connect REST
+    `/connectors/<nome>/status`) e stato dello slot di replica — scritta in
+    `manifest.json.initial_conditions`. Stessa disciplina del campionatore
+    periodico: irraggiungibile → `null` + `error` esplicito, mai un valore
+    inventato.
+  - **Non aggiunto nulla per il campionamento periodico di GPU/RAM/load**
+    durante il run: **esisteva già**. `sample_host()` lo raccoglie a ogni
+    intervallo dalla quarta entry, e `verdict.py`'s `host_exclusivity`
+    aggrega già min/max VRAM usata sull'intero `samples.jsonl` — la parte
+    "run-check" di #44 (distinguere un run esclusivo dall'inizio alla fine
+    da uno diventato condiviso a metà) è quindi già coperta dai dati che il
+    campionatore scrive da quando esiste, non da codice nuovo di questa
+    entry.
+- **Decisioni prese** (e perché — alternative scartate):
+  - **Fermata al punto 2 del compito** (flag + raccolta iniziale), **senza**
+    costruire il pre-check/classificatore di #44 (il gate che rifiuta un run
+    su macchina condivisa, la logica `exclusive`/`shared` automatica).
+    *Motivo*: #44 ha una definition of done più ampia, propria di Fase 2, e
+    il compito stesso autorizzava a fermarsi qui se il resto "cresce troppo"
+    — costruirla ora sarebbe invadere lo scope di un'altra issue dalla
+    sessione sbagliata. Il punto 3 (campionamento periodico) non ha
+    richiesto questa scelta perché **era già soddisfatto** dal lavoro
+    precedente, non per aver tagliato scope.
+  - **`initial_conditions` come oggetto annidato nel manifest**, non chiavi
+    piatte allo stesso livello di `exclusivity`: tiene insieme ciò che è
+    "stato iniziale dichiarato dalla pipeline" separato da ciò che è
+    "configurazione del run", leggibile senza ambiguità da chi apre il
+    manifest fra mesi.
+  - **`--mode init` dentro `sample.py` esistente**, non un secondo script:
+    riusa `sample_postgres()` per lo stato dello slot invece di duplicare la
+    query, e riusa la stessa disciplina di errore. *Alternativa scartata*:
+    uno script `bench/soak/lib/init.py` separato — scartata perché avrebbe
+    duplicato la query psql e il pattern di errore già scritti.
+- **Test eseguiti**:
+  - `bash -n run.sh`, `python3 -m py_compile sample.py`, `ruff check
+    bench/soak/` → tutti puliti.
+  - `python3 bench/soak/lib/sample.py --mode init` isolato (nessun Docker in
+    questa sandbox) → JSON valido, `connector.error` e `postgres_error`
+    popolati, nessun crash, exit 0.
+  - `run.sh --interval 2 --duration 6 --exclusivity shared` end-to-end →
+    `manifest.json` contiene `"exclusivity": "shared"` e
+    `initial_conditions` popolato coerentemente con la degradazione
+    attesa (niente Docker qui).
+  - `run.sh --exclusivity bogus` → rifiutato con messaggio esplicito, exit
+    2 (validazione dei tre soli valori ammessi).
+  - Default invariato: `run.sh` senza `--exclusivity` → `"unknown"` nel
+    manifest, come prima.
+  - **Non toccato il soak in corso su ENV-W** (né il branch nel punto in cui
+    lo sta eseguendo, né alcun file mentre gira): verificato leggendo la
+    richiesta della supervisione prima di agire.
+- **Costo della sessione**: `claude-sonnet-5`, non ri-misurato per questa
+  singola entry (stesso criterio di urgenza della quinta) — cumulativo alla
+  prossima chiusura di fase.
+- **Non funziona / sospeso**: la classificazione automatica exclusive/shared
+  e il pre-check che blocca un run su macchina condivisa restano **aperti,
+  di #44, Fase 2** — non iniziati qui, per costruzione.
+- **Prossimo passo per la sessione successiva**: al termine del soak in
+  corso (21:30Z) o al lancio del prossimo, usare
+  `bench/soak/run.sh ... --exclusivity <valore dichiarato>` invece di
+  editare `manifest.json` a mano. Chi apre #44 in Fase 2 trova già scritti:
+  il flag di dichiarazione, la raccolta di stato iniziale, e il riepilogo
+  GPU/RAM/load per-campione — gli resta solo il pre-check che blocca un run
+  e la classificazione automatica.
+- **Decisioni richieste all'owner**: nessuna.

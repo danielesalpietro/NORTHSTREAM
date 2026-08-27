@@ -10,7 +10,7 @@ forma compressa della fase, e alla chiusura diventa l'ESITO FASE.
 
 ---
 
-## SINTESI DI FASE — aggiornata al 2026-08-27 (sessioni A e B)
+## SINTESI DI FASE — aggiornata al 2026-08-27 (sessioni A e B, verifica ENV-W)
 
 > **Correzione di riferimenti (supervisione, 27/08)**: la terza entry cita i commit
 > `5f98800` e `531ed58`, che **non esistono nel repository** — sono gli SHA che la
@@ -20,10 +20,13 @@ forma compressa della fase, e alla chiusura diventa l'ESITO FASE.
 > annotare l'SHA *dopo* il push, non prima.
 
 **Dove siamo**: **Sessione A** ha chiuso lato codice #41 (P-9) e #42 (P-10) — v.
-terza entry del 27/08. #41 verificato su clone pulito (exit 126 sparito). #42
-verificato solo staticamente (YAML valido, `docker compose config` verde): manca
-ancora **una nightly reale su ENV-W** che confermi che `ollama_data` sopravvive al
-teardown — è il progression test dichiarato di #42, non il codice da solo.
+terza entry del 27/08. #41 verificato su clone pulito (exit 126 sparito). **#42 è ora
+verificato per misura**: la sessione ENV-W ha innescato la prima nightly reale del
+progetto (run 33056266125, `workflow_dispatch` su `9082a02`) e dopo il teardown
+`ollama_data` esiste ancora, `ollama list` elenca entrambi i Granite, e i sette blob
+sono bit-identici a prima del run; i tre volumi di stato sono invece spariti, quindi il
+teardown ripulisce ancora. Run report
+`docs/runs/20260827-0859-envw-9082a02.md`.
 **Sessione B** ha implementato e committato, nello stesso branch, **#17, #16,
 #18, #19** (4 commit, uno per issue) — verifica anch'essa solo statica (nessun
 demone Docker in quella sessione): `docker compose config`, `bench/t0/run.sh
@@ -40,9 +43,9 @@ e la **Fase 6 / v0.0.6** fra governance e beta1, con la specifica vincolante di 
 (contratto `ChangeFact`, piano §1.1) — v. le prime due entry del 27/08.
 Base: tag `v0.0.1` → `d3053be`, `develop` allineato. Lo stack sulla Z8 è spento
 con i volumi conservati; il runner self-hosted `z8-env-w` è registrato e attivo,
-ma `ci-nightly` è dormiente perché `RUN_NIGHTLY` non è impostata — e non va
-impostata finché #42 non è **verificato con una nightly reale**, non solo
-corretto nel codice.
+`ci-nightly` ha girato una volta a mano ed è tornata dormiente:
+`RUN_NIGHTLY` resta **non impostata**, ma il blocco che lo imponeva (#42) è caduto —
+accenderla è ora una decisione dell'owner, non un rischio per i modelli.
 
 **Scope della fase** (`docs/piano_ricovero.md` §6, riga v0.0.2 — obiettivo O3):
 rendere lo stack raggiungibile dall'host come documentato e riproducibile nel
@@ -54,8 +57,8 @@ tempo. Issue di fase [#4](https://github.com/danielesalpietro/NORTHSTREAM/issues
 | [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17) | Pin immagini a versione+digest; sostituzione di `bitnamilegacy/kafka` | P-3, P-4 | **implementato**, da confermare su ci-smoke |
 | [#18](https://github.com/danielesalpietro/NORTHSTREAM/issues/18) | Binding porte su `127.0.0.1` | P-7 | **implementato**, verificato staticamente |
 | [#19](https://github.com/danielesalpietro/NORTHSTREAM/issues/19) | Script preflight (`vm.max_map_count`, RAM, GPU) | P-6 | **implementato**, eseguito in sandbox; `.ps1` da collaudare su Windows/ENV-L |
-| [#41](https://github.com/danielesalpietro/NORTHSTREAM/issues/41) | Bit di esecuzione sui tre script del Quick Start | **P-9** | sessione A |
-| [#42](https://github.com/danielesalpietro/NORTHSTREAM/issues/42) | Teardown di `ci-nightly` che cancella `ollama_data` | **P-10** | sessione A |
+| [#41](https://github.com/danielesalpietro/NORTHSTREAM/issues/41) | Bit di esecuzione sui tre script del Quick Start | **P-9** | **chiuso e verificato su ENV-W**: lo step `./start-addon.sh --gpu` della nightly è verde |
+| [#42](https://github.com/danielesalpietro/NORTHSTREAM/issues/42) | Teardown di `ci-nightly` che cancella `ollama_data` | **P-10** | **chiuso e verificato su ENV-W**: progression test superato (v. sopra) |
 | [#20](https://github.com/danielesalpietro/NORTHSTREAM/issues/20) | Release v0.0.2: gate, CHANGELOG, tag | — | non iniziata |
 
 **Progression test dichiarati**: **T0.6** XFAIL → **PASS** dichiarato in
@@ -184,25 +187,40 @@ per una sessione senza demone Docker):
   riga 185 di `docker-compose-northstream-ai.yml` a 123 caratteri, dovuto
   alla lunghezza intrinseca di `image@sha256:...`).
 
-**Numeri misurati**: nessun run T0 formale in nessuna delle due sessioni (nessun
-demone Docker); il metro di partenza resta
+**Numeri misurati**: il metro di partenza resta
 `docs/runs/20260826-2053-envw-5eb456a-baseline.md`. Verifiche statiche di
 sessione B elencate sopra (T0.1/T0.12/T-REPRO PASS, porte 127.0.0.1, preflight
-in sandbox).
+in sandbox). **Primo run reale della fase**, dalla sessione ENV-W:
+`20260827-0859-envw-9082a02` (suite `full`, modelli veri, `9082a02` — cioè
+**prima** dei commit di B, arrivati durante l'esecuzione):
+`{"PASS": 5, "FAIL": 1, "XFAIL": 4, "XPASS": 2}`. Contro il riferimento:
+T0.1–T0.4 invariati, T0.12 PASS atteso, XFAIL invariati, **T0.9 XFAIL → XPASS**
+(da non promuovere: stessa fragilità di #40), **T0.5 PASS → FAIL** — non una
+regressione del sistema, ma un artefatto di condizione: lo stesso commit dà
+**PASS 3 su 3** a stack caldo, e il diff su `stream-agent/` dalla baseline è
+vuoto. Dettaglio in `docs/runs/20260827-0859-envw-9082a02.md`.
 
 **Aperto**
-- **#42 corretto ma non ancora verificato con una nightly reale** (richiede
-  `workflow_dispatch` dalla sessione ENV-W). `RUN_NIGHTLY` resta spenta finché
-  quella verifica non conferma che `ollama_data` sopravvive al teardown —
-  decisione dell'owner anche dopo la conferma.
+- **#42 verificato con una nightly reale il 27/08** (run 33056266125): il blocco
+  è caduto. `RUN_NIGHTLY` resta comunque **spenta**: accenderla è una decisione
+  dell'owner, non una conseguenza automatica della verifica.
+- **La nightly misura a freddo**: avvia lo stack ed esegue subito la suite, dentro
+  la finestra cieca di A-8/#39 e col primo caricamento dei modelli in corso. T0.5 e
+  T0.9 hanno dato per questo verdetti diversi dal reale. Serve un *warm-up gate*
+  prima che un FAIL della nightly significhi qualcosa — **decisione richiesta
+  all'owner**, issue sorella di #39/#40 non ancora aperta.
+- **La 3090 di ENV-W è condivisa** con un container estraneo al progetto
+  (`C.48865947`, vast.ai): 11,6–22,3 GiB dei 24,5 occupati durante la verifica.
+  Variabile non controllata di ogni misura su ENV-W.
 - **Verifica comportamentale reale di #16/#17 su ci-smoke** — il push di
   sessione B la innesca; se `ci-smoke` risulta rosso, il sospetto principale è
   la configurazione KRaft dell'immagine Apache (nome env var, path
   dell'healthcheck `/opt/kafka/bin/kafka-topics.sh`, o `CLUSTER_ID`) — v. le
   decisioni sopra per cosa è stato dedotto dalla documentazione invece che
   osservato.
-- **T0.5 e la suite `full`** restano da eseguire su ENV-W/ENV-L (nessun
-  demone Docker in nessuna delle due sessioni).
+- **La suite `full` sul codice di B** (`7364349` o successivo) resta da eseguire su
+  ENV-W: il run del 27/08 misura `9082a02` e la sua riga T0.6 XFAIL **non** è il
+  verdetto sul progression test della release.
 - **`preflight.ps1` da collaudare** su un host Windows reale o ENV-L.
 - **Debito documentale README** (tabella Kafka, sezione prerequisiti per il
   preflight — v. decisioni sopra) da pagare a fine release, insieme a #20.
@@ -214,9 +232,11 @@ La beta1 si sposta da metà a **fine settembre**. Il costo è accettato dall'own
 senza O8/O9 la beta1 sarebbe un sistema che passa i propri test tecnici e non
 dimostra niente a un utente finale.
 
-**Prossimo passo**: controllare l'esito di `ci-static`/`ci-smoke` sul push di
-sessione B e, in parallelo, far innescare dalla sessione ENV-W una nightly reale
-per verificare #42. Se entrambi verdi: #20 (gate di release, CHANGELOG →
+**Prossimo passo**: #42 è verificato; resta da controllare l'esito di
+`ci-static`/`ci-smoke` sul push di sessione B e far eseguire su ENV-W un nuovo run
+`full` contro `7364349` — è lì che si misura **T0.6**, il progression test dichiarato
+della release, e che si verifica che il binding `127.0.0.1` (#18) non abbia rotto
+T0.2/T0.3. Se entrambi verdi: #20 (gate di release, CHANGELOG →
 versione, README a fine release, tag). Se `ci-smoke` è rosso, diagnosticare a
 partire dai log del job (probabile causa: configurazione KRaft dell'immagine
 Apache, v. "Aperto").
@@ -481,3 +501,90 @@ Apache, v. "Aperto").
   scelta di non invocare automaticamente il preflight da `start-addon.sh` è
   reversibile e proposta per essere rivista dopo che lo script avrà girato
   su almeno un host reale (ENV-L o Z8).
+
+## 2026-08-27 — ENV-W (Z8, sessione bridge Claude CLI) — host di verifica
+
+- **Obiettivo della sessione**: eseguire su ENV-W il **progression test dichiarato di
+  [#42](https://github.com/danielesalpietro/NORTHSTREAM/issues/42)** — una nightly reale
+  dopo cui `ollama_data` esiste ancora e i modelli sono elencati — e archiviare il run
+  secondo la convenzione `RUN_ID`. Sessione di sola esecuzione: nessun codice committato.
+- **Fatto**:
+  - Fotografia dello stato della macchina prima del run (richiesta dalla supervisione):
+    stack spento e container rimossi, otto volumi `wap-northstream-lab_*` presenti,
+    runner `z8-env-w` `active` da 10 h, 291 G liberi su `/mnt/wdc-docker`, 83 G su `/`.
+  - Innescata la prima nightly reale del progetto:
+    `gh workflow run ci-nightly.yml --ref release/v0.0.2 -f suite=full` → run
+    **33056266125** su `9082a02`. **`RUN_NIGHTLY` non impostata** (il dispatch bypassa il
+    gate di riga 31 per costruzione): accenderla resta una decisione dell'owner.
+  - Run report `docs/runs/20260827-0859-envw-9082a02.md` committato; grezzi in
+    `~/NORTHSTREAM-archive/20260827-0859-envw-9082a02/` (28 file, `sha256sum -c` 27/27
+    OK, più la cartella `diagnosi-T0.5/` con i sei tentativi di riesecuzione).
+- **Decisioni prese**:
+  - **T0.5 non è trattato come blocco di release, e il perché è una misura, non un
+    giudizio.** Il verdetto grezzo della nightly (`PASS` → `FAIL`) bloccherebbe la
+    release per §5. Ma il retrieval nel run funziona (`context_used` porta 91.73 in
+    entrambi i tentativi), il diff `5eb456a..9082a02` su `stream-agent/`, generatore,
+    init e connettori è **vuoto**, e riesecuzioni mirate sullo stesso commit danno
+    **PASS 3 su 3** a stack caldo. Il fallimento è un artefatto della condizione di run
+    — suite lanciata a freddo subito dopo `start-addon.sh` — non un difetto della
+    release. *Alternativa scartata*: dichiarare il blocco e fermare la release. Sarebbe
+    stato letterale e sbagliato: avrebbe attribuito a v0.0.2 un difetto che il codice
+    di v0.0.2 non contiene, e avrebbe insegnato a leggere la nightly come oracolo
+    invece che come misura da interpretare.
+  - **La prima riesecuzione è stata progettata male e lo si dice**: i tentativi 1-3
+    hanno fallito **per un motivo diverso** dalla nightly (`context_used does not carry
+    91.73`), perché lanciati dentro la finestra cieca di A-8/#39. Non riproducevano
+    nulla. Solo i tentativi 4-6, a stack caldo, sono una misura del punto in questione.
+    Registrato perché la lezione vale più del risultato: una riesecuzione che fallisce
+    *diversamente* non conferma il fallimento originale.
+  - **L'XPASS di T0.9 non va promosso a PASS**, per la stessa ragione per cui non fu
+    promosso quello di T0.10 nel run di riferimento: nessuna riga dell'agent è cambiata,
+    e il test dipende da quanti eventi la collection contiene al momento della domanda.
+- **Test eseguiti**:
+  - `gh workflow run ci-nightly.yml --ref release/v0.0.2 -f suite=full` → run
+    33056266125, job **failure** in 10 min 48 s, **unico step fallito** `Run the T0 suite
+    with real models`. Gli step `Start the full stack with the addon` (P-9, #41) e
+    `Tear down` (P-10, #42, `if: always()`) sono **verdi**.
+  - **Progression test #42 → PASS.** `docker volume ls | grep wap-northstream-lab` dopo
+    il run: `kafka_data`, `postgres_data`, `qdrant_data` **rimossi**, `ollama_data`
+    **presente**. `ollama list` (da container usa-e-getta montato sul volume, perché
+    sull'host il binario non esiste): `granite-embedding:30m` 62 MB e `granite4:1b`
+    3,3 GB **elencati**. `diff` dei 7 blob prima/dopo: **nessuna differenza** — non
+    cancellati e riscaricati, proprio gli stessi bit.
+  - **Verificato di sponda #41 (P-9)**: lo step `./start-addon.sh --gpu` non muore più
+    con `Permission denied`; `git ls-files -s` dà `100755` sui tre script.
+  - Suite `full` su `9082a02`, attese `current.json`:
+    `{"PASS": 5, "FAIL": 1, "XFAIL": 4, "XPASS": 2}`. Contro il run di riferimento:
+    T0.1–T0.4 PASS invariati, T0.12 PASS (atteso, flippato in v0.0.1), T0.6/T0.7/T0.8/
+    T0.11 XFAIL invariati, T0.10 XPASS invariato, **T0.9 XFAIL → XPASS**, **T0.5 PASS →
+    FAIL** (v. Decisioni).
+  - `bench/t0/run.sh --suite full --only T0.5` ×6 su `9082a02`: **FAIL ×3** a stack
+    freddo (fallimento di retrieval, A-8), **PASS ×3** a stack caldo (`ollama ps`:
+    entrambi i modelli `100% GPU`), risposta che cita il valore al primo tentativo in
+    1-2 s.
+- **Costo della sessione**: **non misurabile** — sessione bridge (Claude CLI locale), il
+  campo `usage` non è esposto (`CLAUDE.md` §4).
+- **Non funziona / sospeso**:
+  - **La nightly esegue la suite nella condizione peggiore**: avvia lo stack e misura
+    subito, dentro la finestra cieca di A-8 e col primo caricamento dei modelli in corso.
+    T0.5 e T0.9 hanno dato verdetti diversi dal reale per questo. Finché non esiste un
+    *warm-up gate*, la nightly è una guardia di non-regressione indebolita. **Decisione
+    richiesta all'owner**: aprire una issue sorella di #39/#40 per quel gate.
+  - **La 3090 è condivisa con un container estraneo al progetto** (`C.48865947`,
+    vast.ai), che in questa sessione ha occupato fra **11,6 e 22,3 GiB** dei 24,5. Non ha
+    impedito il run, ma è una variabile non controllata di ogni misura su ENV-W.
+  - `ollama` **non è installato sull'host**: ogni verifica sui modelli richiede un
+    container. Da sapere per chi scriverà procedure di verifica su ENV-W.
+  - Questo run misura `9082a02`, **prima** dei commit della sessione B arrivati durante
+    l'esecuzione: la riga T0.6 XFAIL non è il verdetto sul progression test della release.
+- **Prossimo passo per la sessione successiva**: eseguire un nuovo run `full` su ENV-W
+  contro `7364349` (o successivo) per misurare **T0.6**, il progression test dichiarato
+  di v0.0.2, ora che #17+#16 sono sul branch — e verificare che il binding su
+  `127.0.0.1` (#18) non abbia rotto i PASS T0.2/T0.3.
+
+## Decisioni richieste all'owner
+
+1. **`RUN_NIGHTLY`**: con #42 verificato per misura, il blocco che teneva la variabile
+   spenta è caduto. Accenderla resta una tua decisione e non è stata presa qui.
+2. **Warm-up gate della nightly** (v. "Non funziona / sospeso"): senza, i FAIL di T0.5 e
+   T0.9 nelle notti future saranno rumore di condizione e non regressioni.

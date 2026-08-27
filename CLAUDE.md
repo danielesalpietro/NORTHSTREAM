@@ -384,6 +384,11 @@ della sessione" (§4) a ogni chiusura di fase, per vedere se resta piatto.
   schema: `init/postgres/001-init-sales-db.sql` · connettore:
   `connectors/postgres-source-connector.json`
 - Modelli/tier: `examples/{minimal,recommended,optimal}/.env`
+- **LLD dell'architettura**: [`docs/lld/northstream-lld.html`](docs/lld/northstream-lld.html) — pagina
+  autoconsistente (si apre da disco, nessuna dipendenza esterna se non i font). Disegna il percorso
+  dati reale, gli interni dell'agent col boost keyword di A-1, i layer avviati e non attraversati, i
+  profili coi tetti di memoria e la topologia di misura. **Va riletto quando cambia il comportamento**,
+  non a ogni commit: è generato dai compose e da `stream-agent/app.py`, quindi invecchia con loro.
 - Nota nota-bene per chi tocca l'agent: il retrieval attuale contiene il boost
   keyword su `KNOWN_SITES` (finding A-1) — viene rimosso in v0.0.4, non
   "sistemato" prima per altre vie.

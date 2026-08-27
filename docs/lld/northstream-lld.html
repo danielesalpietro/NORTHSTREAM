@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Low-Level Design di NORTHSTREAM: percorso dati reale, layer non collegati, interni dell'agent e misure che li sostengono.">
+<title>NORTHSTREAM Low-Level Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+:root{
+  --paper:#f3f5f6;
+  --surface:#ffffff;
+  --surface-2:#e9edef;
+  --ink:#12181d;
+  --ink-2:#42505b;
+  --ink-3:#6c7b87;
+  --rule:#cdd6db;
+  --wired:#0b6d63;
+  --wired-soft:#d5e8e5;
+  --dormant:#8a97a3;
+  --dormant-soft:#e2e7ea;
+  --flag:#a32846;
+  --flag-soft:#f6dde3;
+  --shadow:0 1px 0 rgba(18,24,29,.04), 0 8px 28px -18px rgba(18,24,29,.35);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0e1317;
+    --surface:#151b21;
+    --surface-2:#1d252c;
+    --ink:#e6edf1;
+    --ink-2:#aebac4;
+    --ink-3:#7d8d99;
+    --rule:#2b353d;
+    --wired:#4bbfae;
+    --wired-soft:#123331;
+    --dormant:#75838f;
+    --dormant-soft:#1b2329;
+    --flag:#e97f9a;
+    --flag-soft:#33161f;
+    --shadow:0 1px 0 rgba(0,0,0,.3), 0 10px 30px -20px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0e1317;
+  --surface:#151b21;
+  --surface-2:#1d252c;
+  --ink:#e6edf1;
+  --ink-2:#aebac4;
+  --ink-3:#7d8d99;
+  --rule:#2b353d;
+  --wired:#4bbfae;
+  --wired-soft:#123331;
+  --dormant:#75838f;
+  --dormant-soft:#1b2329;
+  --flag:#e97f9a;
+  --flag-soft:#33161f;
+  --shadow:0 1px 0 rgba(0,0,0,.3), 0 10px 30px -20px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:"IBM Plex Serif",Georgia,serif;
+  font-size:17px;
+  line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px 96px}
+.col{max-width:68ch}
+
+h1,h2,h3,.label,.meta,nav,table,figcaption,.chip,code,.tag{font-family:"IBM Plex Sans",system-ui,sans-serif}
+code,.mono,.port{font-family:"IBM Plex Mono",ui-monospace,monospace}
+
+header.masthead{
+  border-bottom:1px solid var(--rule);
+  padding:56px 0 28px;
+  margin-bottom:44px;
+}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 14px;
+}
+h1{
+  font-size:clamp(34px,5vw,52px);line-height:1.04;margin:0 0 18px;
+  font-weight:600;letter-spacing:-.02em;text-wrap:balance;
+}
+.standfirst{font-size:19px;color:var(--ink-2);margin:0;max-width:64ch}
+.meta{
+  display:flex;flex-wrap:wrap;gap:10px 26px;margin-top:26px;
+  font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--ink-3);
+}
+.meta b{color:var(--ink-2);font-weight:500}
+
+h2{
+  font-size:13px;letter-spacing:.15em;text-transform:uppercase;font-weight:600;
+  color:var(--ink-3);margin:0 0 6px;
+}
+.section{padding-top:52px;margin-top:52px;border-top:1px solid var(--rule)}
+.section:first-of-type{border-top:0;margin-top:0;padding-top:0}
+h3{font-size:27px;line-height:1.2;font-weight:600;letter-spacing:-.015em;margin:0 0 16px;text-wrap:balance}
+p{margin:0 0 16px}
+.col p:last-child{margin-bottom:0}
+strong{font-weight:500;color:var(--ink)}
+em{font-style:italic}
+a{color:var(--wired)}
+
+code{
+  font-size:.86em;background:var(--surface-2);color:var(--ink);
+  padding:.12em .38em;border-radius:3px;
+}
+
+figure{
+  margin:34px 0 0;background:var(--surface);border:1px solid var(--rule);
+  border-radius:4px;padding:26px 24px 20px;box-shadow:var(--shadow);
+  overflow-x:auto;
+}
+figure svg{display:block;width:100%;max-width:100%;height:auto;min-width:640px}
+figcaption{
+  margin-top:20px;padding-top:16px;border-top:1px solid var(--rule);
+  font-size:13.5px;line-height:1.55;color:var(--ink-2);max-width:78ch;
+}
+figcaption b{color:var(--ink);font-weight:600}
+
+/* SVG semantic classes */
+.s-box{fill:var(--surface);stroke:var(--ink-2);stroke-width:1.2}
+.s-box-wired{fill:var(--wired-soft);stroke:var(--wired);stroke-width:1.4}
+.s-box-dormant{fill:var(--dormant-soft);stroke:var(--dormant);stroke-width:1.1;stroke-dasharray:4 3}
+.s-box-flag{fill:var(--flag-soft);stroke:var(--flag);stroke-width:1.3}
+.s-zone{fill:none;stroke:var(--rule);stroke-width:1;stroke-dasharray:2 4}
+.s-t{fill:var(--ink);font-family:"IBM Plex Sans",sans-serif;font-size:12.5px;font-weight:600}
+.s-t2{fill:var(--ink-2);font-family:"IBM Plex Mono",monospace;font-size:10.5px}
+.s-t3{fill:var(--ink-3);font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.06em}
+.s-tw{fill:var(--wired);font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:500}
+.s-tf{fill:var(--flag);font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:500}
+.s-line{stroke:var(--ink-2);stroke-width:1.4;fill:none}
+.s-line-wired{stroke:var(--wired);stroke-width:1.9;fill:none}
+.s-line-dash{stroke:var(--dormant);stroke-width:1.2;fill:none;stroke-dasharray:5 4}
+.s-line-flag{stroke:var(--flag);stroke-width:1.6;fill:none}
+.s-fillw{fill:var(--wired)}
+.s-fillf{fill:var(--flag)}
+.s-filld{fill:var(--dormant)}
+.s-filli{fill:var(--ink-2)}
+
+.legend{
+  display:flex;flex-wrap:wrap;gap:12px 28px;margin:26px 0 0;padding:16px 18px;
+  background:var(--surface);border:1px solid var(--rule);border-radius:4px;
+  font-family:"IBM Plex Sans",sans-serif;font-size:13px;color:var(--ink-2);
+}
+.legend span{display:flex;align-items:center;gap:9px}
+.swatch{width:26px;height:13px;border-radius:2px;flex:none}
+.sw-wired{background:var(--wired-soft);border:1.4px solid var(--wired)}
+.sw-dormant{background:var(--dormant-soft);border:1.1px dashed var(--dormant)}
+.sw-flag{background:var(--flag-soft);border:1.3px solid var(--flag)}
+
+table{
+  width:100%;border-collapse:collapse;margin:26px 0 0;font-size:13.5px;
+  font-variant-numeric:tabular-nums;
+}
+caption{
+  text-align:left;font-size:12px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);padding-bottom:10px;font-weight:600;
+}
+th{
+  text-align:left;font-weight:600;font-size:11.5px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--ink-3);
+  border-bottom:1px solid var(--ink-2);padding:0 14px 8px 0;
+}
+td{padding:9px 14px 9px 0;border-bottom:1px solid var(--rule);vertical-align:top;color:var(--ink-2)}
+td:first-child{color:var(--ink);font-weight:500}
+td.port,td.num{font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+.tablewrap{overflow-x:auto}
+.tag{
+  display:inline-block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;font-weight:600;white-space:nowrap;
+}
+.t-core{background:var(--wired-soft);color:var(--wired)}
+.t-lake{background:var(--dormant-soft);color:var(--ink-3)}
+.t-gov{background:var(--dormant-soft);color:var(--ink-3)}
+
+.findings{list-style:none;padding:0;margin:26px 0 0;display:grid;gap:14px}
+.findings li{
+  background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--flag);
+  border-radius:0 4px 4px 0;padding:15px 18px;font-size:14.5px;line-height:1.55;color:var(--ink-2);
+}
+.findings b{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--flag);font-weight:600}
+
+.note{
+  margin:26px 0 0;padding:16px 18px;background:var(--surface-2);
+  border-radius:4px;font-size:14.5px;color:var(--ink-2);
+}
+.note b{color:var(--ink)}
+
+footer{
+  margin-top:64px;padding-top:22px;border-top:1px solid var(--rule);
+  font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-3);
+}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Low-Level Design · Lab CDC + RAG</p>
+  <h1>NORTHSTREAM</h1>
+  <p class="standfirst">Come è fatto davvero lo stack: il percorso dei dati che funziona end&#8209;to&#8209;end, i layer presenti ma non collegati, e i meccanismi interni dell'agent che i finding della review mettono in discussione.</p>
+  <div class="meta">
+    <span><b>Riferimento</b> tag v0.0.2 → 966422d · head release/v0.0.3</span>
+    <span><b>Aggiornato</b> 27 agosto 2026</span>
+    <span><b>Fonte</b> compose, connettore, stream-agent/app.py</span>
+  </div>
+</header>
+
+<section class="section">
+  <div class="col">
+    <h2>Premessa</h2>
+    <h3>Un solo percorso porta dati, gli altri sono presenti</h3>
+    <p>Diciannove container si avviano insieme, ma <strong>una sola catena trasporta dati da un capo all'altro</strong>: Postgres → Debezium → Kafka → agent → Qdrant → LLM. Tutto il resto — Flink, Apicurio, MinIO, Trino, OpenMetadata — è configurato, si avvia, espone una UI, e <strong>non è attraversato da alcun evento</strong>.</p>
+    <p>Questo documento disegna quella distinzione invece di nasconderla, perché è la prima cosa che un ingegnere deve sapere prima di toccare qualsiasi componente. La codifica visiva è costante in tutte le figure.</p>
+  </div>
+
+  <div class="legend">
+    <span><i class="swatch sw-wired"></i> Attraversato dai dati</span>
+    <span><i class="swatch sw-dormant"></i> Avviato, non collegato al flusso</span>
+    <span><i class="swatch sw-flag"></i> Meccanismo con finding aperto</span>
+  </div>
+</section>
+
+<section class="section">
+  <div class="col">
+    <h2>§1 · Percorso dei dati</h2>
+    <h3>Dalla scrittura in tabella alla risposta fondata</h3>
+    <p>Il generatore scrive righe in due tabelle. Debezium legge il WAL attraverso uno slot di replica logica e pubblica su Kafka un topic per tabella. L'agent consuma, trasforma ogni evento in testo, ne calcola l'embedding e lo scrive in Qdrant. Alla domanda, recupera contesto e lo passa al modello.</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1120 470" role="img" aria-label="Percorso dei dati: Postgres con slot di replica, Debezium, Kafka con doppio listener, stream-agent, Qdrant e Ollama; sotto, il percorso della domanda dall'host all'agent fino alla risposta fondata">
+      <defs>
+        <marker id="aw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" class="s-fillw"/>
+        </marker>
+        <marker id="ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" class="s-filli"/>
+        </marker>
+      </defs>
+
+      <text x="0" y="14" class="s-t3">INGESTIONE — CONTINUA</text>
+
+      <rect x="0" y="30" width="150" height="72" rx="3" class="s-box-wired"/>
+      <text x="14" y="54" class="s-t">data-generator</text>
+      <text x="14" y="72" class="s-t2">psycopg2</text>
+      <text x="14" y="88" class="s-t2">1 evento / 3 s</text>
+
+      <line x1="150" y1="66" x2="212" y2="66" class="s-line-wired" marker-end="url(#aw)"/>
+      <text x="156" y="58" class="s-tw">INSERT</text>
+
+      <rect x="214" y="30" width="176" height="112" rx="3" class="s-box-wired"/>
+      <text x="228" y="54" class="s-t">postgres · sales</text>
+      <text x="228" y="72" class="s-t2">public.orders</text>
+      <text x="228" y="88" class="s-t2">public.sensor_readings</text>
+      <text x="228" y="110" class="s-t3">SLOT northstream_slot</text>
+      <text x="228" y="126" class="s-t2">pgoutput · WAL logico</text>
+
+      <line x1="390" y1="66" x2="452" y2="66" class="s-line-wired" marker-end="url(#aw)"/>
+      <text x="392" y="58" class="s-tw">stream WAL</text>
+
+      <rect x="454" y="30" width="176" height="112" rx="3" class="s-box-wired"/>
+      <text x="468" y="54" class="s-t">debezium-connect</text>
+      <text x="468" y="72" class="s-t2">2.7.3.Final · :8083</text>
+      <text x="468" y="94" class="s-t3">JsonConverter</text>
+      <text x="468" y="110" class="s-t2">schemas disabled</text>
+      <text x="468" y="130" class="s-t2">decimal → double</text>
+
+      <line x1="630" y1="66" x2="692" y2="66" class="s-line-wired" marker-end="url(#aw)"/>
+      <text x="632" y="58" class="s-tw">produce</text>
+
+      <rect x="694" y="30" width="196" height="142" rx="3" class="s-box-wired"/>
+      <text x="708" y="54" class="s-t">kafka · KRaft</text>
+      <text x="708" y="72" class="s-t2">apache/kafka:4.3.1</text>
+      <text x="708" y="96" class="s-t3">TOPIC PREFIX northstream</text>
+      <text x="708" y="112" class="s-t2">.public.orders</text>
+      <text x="708" y="128" class="s-t2">.public.sensor_readings</text>
+      <text x="708" y="150" class="s-t3">kafka:9092 · localhost:29092</text>
+      <text x="708" y="164" class="s-t2">interno / esterno</text>
+
+      <line x1="890" y1="66" x2="952" y2="66" class="s-line-wired" marker-end="url(#aw)"/>
+      <text x="892" y="58" class="s-tw">consume</text>
+
+      <rect x="954" y="30" width="166" height="112" rx="3" class="s-box-flag"/>
+      <text x="968" y="54" class="s-t">stream-agent</text>
+      <text x="968" y="72" class="s-t2">FastAPI · :8500</text>
+      <text x="968" y="94" class="s-t3">PATTERN ^northstream\..*</text>
+      <text x="968" y="112" class="s-t2">buffer RAM 500</text>
+      <text x="968" y="130" class="s-tf">dettaglio in §2</text>
+
+      <path d="M1037 142 L1037 196 L640 196" class="s-line-wired" marker-end="url(#aw)"/>
+      <text x="800" y="188" class="s-tw">embed_text() → vettore</text>
+
+      <rect x="454" y="206" width="184" height="76" rx="3" class="s-box-wired"/>
+      <text x="468" y="230" class="s-t">ollama · embedding</text>
+      <text x="468" y="248" class="s-t2">granite-embedding:30m</text>
+      <text x="468" y="266" class="s-t2">38 MB · 100% GPU</text>
+
+      <path d="M454 244 L300 244 L300 300" class="s-line-wired" marker-end="url(#aw)"/>
+      <text x="306" y="238" class="s-tw">vettore</text>
+
+      <rect x="214" y="310" width="184" height="76" rx="3" class="s-box-wired"/>
+      <text x="228" y="334" class="s-t">qdrant</text>
+      <text x="228" y="352" class="s-t2">collection stream_events</text>
+      <text x="228" y="370" class="s-t2">upsert · id monotonico</text>
+
+      <line x1="0" y1="418" x2="1120" y2="418" class="s-zone"/>
+      <text x="0" y="440" class="s-t3">INTERROGAZIONE — SU DOMANDA</text>
+
+      <rect x="0" y="310" width="150" height="76" rx="3" class="s-box"/>
+      <text x="14" y="334" class="s-t">host</text>
+      <text x="14" y="352" class="s-t2">POST /chat</text>
+      <text x="14" y="370" class="s-t2">open-webui :3000</text>
+
+      <path d="M75 310 L75 262 L214 262" class="s-line" marker-end="url(#ai)"/>
+      <text x="84" y="256" class="s-t2">domanda</text>
+
+      <path d="M398 348 L700 348 L700 300" class="s-line" marker-end="url(#ai)"/>
+      <text x="470" y="342" class="s-t2">search_context() → top-k</text>
+
+      <rect x="640" y="224" width="200" height="76" rx="3" class="s-box"/>
+      <text x="654" y="248" class="s-t">ollama · chat</text>
+      <text x="654" y="266" class="s-t2">granite4:1b (tier default)</text>
+      <text x="654" y="284" class="s-t2">prompt fondato sul contesto</text>
+
+      <path d="M840 262 L960 262 L960 320" class="s-line" marker-end="url(#ai)"/>
+      <text x="866" y="256" class="s-t2">risposta</text>
+
+      <rect x="880" y="330" width="160" height="56" rx="3" class="s-box"/>
+      <text x="894" y="354" class="s-t">risposta fondata</text>
+      <text x="894" y="372" class="s-t2">+ context_used</text>
+    </svg>
+    <figcaption><b>Il percorso completo, e le due velocità che lo attraversano.</b> L'ingestione gira in continuo — circa venti eventi al minuto — e il suo costo in GPU è quasi nullo perché il modello di embedding pesa 38 MB. L'interrogazione è episodica e carica il modello di chat solo quando qualcuno domanda: è questa asimmetria che rende il footprint stazionario della GPU di 362 MiB contro i 6,5 GiB dei picchi con la chat attiva.</figcaption>
+  </figure>
+</section>
+
+<section class="section">
+  <div class="col">
+    <h2>§2 · Interno dell'agent</h2>
+    <h3>Il meccanismo che la review contesta</h3>
+    <p>L'agent fa due cose in due tempi diversi: un ciclo di consumo che indicizza, e un percorso di risposta che recupera. Il secondo <strong>non è puro retrieval semantico</strong>: prima di interrogare Qdrant, cerca nella domanda i nomi di sito di una lista fissa e antepone al contesto i match letterali presi dal buffer in RAM.</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1120 420" role="img" aria-label="Interno dello stream-agent: ciclo di consumo con buffer e contatore di point id, e percorso di risposta in cui il boost su lista di siti occupa i primi posti del contesto prima dei risultati di Qdrant">
+      <defs>
+        <marker id="bi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" class="s-filli"/>
+        </marker>
+        <marker id="bf" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" class="s-fillf"/>
+        </marker>
+        <marker id="bw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" class="s-fillw"/>
+        </marker>
+      </defs>
+
+      <rect x="0" y="24" width="1120" height="150" rx="4" class="s-zone"/>
+      <text x="16" y="46" class="s-t3">CONSUME_LOOP — THREAD DI FONDO</text>
+
+      <rect x="16" y="60" width="150" height="66" rx="3" class="s-box-wired"/>
+      <text x="30" y="84" class="s-t">poll Kafka</text>
+      <text x="30" y="102" class="s-t2">pattern regex</text>
+      <text x="30" y="118" class="s-t2">no group_id fisso</text>
+
+      <line x1="166" y1="93" x2="222" y2="93" class="s-line" marker-end="url(#bi)"/>
+
+      <rect x="224" y="60" width="156" height="66" rx="3" class="s-box"/>
+      <text x="238" y="84" class="s-t">event_to_text()</text>
+      <text x="238" y="102" class="s-t2">payload → frase</text>
+      <text x="238" y="118" class="s-t2">topic + campi</text>
+
+      <line x1="380" y1="93" x2="436" y2="93" class="s-line" marker-end="url(#bi)"/>
+
+      <rect x="438" y="60" width="156" height="66" rx="3" class="s-box"/>
+      <text x="452" y="84" class="s-t">embed_text()</text>
+      <text x="452" y="102" class="s-t2">POST /api/embeddings</text>
+      <text x="452" y="118" class="s-t2">1 chiamata / evento</text>
+
+      <line x1="594" y1="93" x2="650" y2="93" class="s-line" marker-end="url(#bi)"/>
+
+      <rect x="652" y="60" width="180" height="66" rx="3" class="s-box-flag"/>
+      <text x="666" y="84" class="s-t">next_point_id()</text>
+      <text x="666" y="102" class="s-t2">contatore monotonico</text>
+      <text x="666" y="118" class="s-tf">riparte da 0 al riavvio</text>
+
+      <line x1="832" y1="93" x2="888" y2="93" class="s-line-wired" marker-end="url(#bw)"/>
+
+      <rect x="890" y="60" width="214" height="66" rx="3" class="s-box-wired"/>
+      <text x="904" y="84" class="s-t">qdrant upsert</text>
+      <text x="904" y="102" class="s-t2">stream_events</text>
+      <text x="904" y="118" class="s-t2">nessuna retention attiva</text>
+
+      <rect x="224" y="136" width="156" height="28" rx="3" class="s-box"/>
+      <text x="238" y="155" class="s-t2">buffer RAM · MAX 500</text>
+      <path d="M302 126 L302 136" class="s-line"/>
+
+      <rect x="0" y="212" width="1120" height="184" rx="4" class="s-zone"/>
+      <text x="16" y="234" class="s-t3">POST /CHAT — SU DOMANDA</text>
+
+      <rect x="16" y="248" width="150" height="66" rx="3" class="s-box"/>
+      <text x="30" y="272" class="s-t">domanda</text>
+      <text x="30" y="290" class="s-t2">"anomalie a Plant-B?"</text>
+
+      <path d="M91 314 L91 344 L222 344" class="s-line-flag" marker-end="url(#bf)"/>
+      <path d="M166 281 L222 281" class="s-line" marker-end="url(#bi)"/>
+
+      <rect x="224" y="248" width="186" height="66" rx="3" class="s-box"/>
+      <text x="238" y="272" class="s-t">search_context()</text>
+      <text x="238" y="290" class="s-t2">Qdrant · vicini top-k</text>
+      <text x="238" y="306" class="s-t2">percorso semantico</text>
+
+      <rect x="224" y="322" width="186" height="60" rx="3" class="s-box-flag"/>
+      <text x="238" y="344" class="s-t">keyword_matches()</text>
+      <text x="238" y="362" class="s-t2">KNOWN_SITES · 5 nomi fissi</text>
+      <text x="238" y="377" class="s-tf">match letterali dal buffer</text>
+
+      <path d="M410 281 L470 281 L470 300" class="s-line" marker-end="url(#bi)"/>
+      <path d="M410 352 L470 352 L470 334" class="s-line-flag" marker-end="url(#bf)"/>
+
+      <rect x="472" y="288" width="200" height="58" rx="3" class="s-box-flag"/>
+      <text x="486" y="310" class="s-t">contesto assemblato</text>
+      <text x="486" y="328" class="s-tf">i match occupano i primi posti</text>
+      <text x="486" y="342" class="s-t2">Qdrant riempie i rimanenti</text>
+
+      <line x1="672" y1="317" x2="728" y2="317" class="s-line" marker-end="url(#bi)"/>
+
+      <rect x="730" y="288" width="180" height="58" rx="3" class="s-box"/>
+      <text x="744" y="312" class="s-t">build_grounded_prompt()</text>
+      <text x="744" y="332" class="s-t2">contesto + domanda</text>
+
+      <line x1="910" y1="317" x2="966" y2="317" class="s-line" marker-end="url(#bi)"/>
+
+      <rect x="968" y="288" width="136" height="58" rx="3" class="s-box"/>
+      <text x="982" y="312" class="s-t">ollama chat</text>
+      <text x="982" y="332" class="s-t2">risposta</text>
+    </svg>
+    <figcaption><b>Il ramo rosso è ciò che la demo mostra come «retrieval semantico».</b> Per la domanda canonica su Plant&#8209;B il percorso vettoriale è di fatto scavalcato: i match letterali occupano le prime posizioni del contesto e Qdrant riempie quelle rimaste. Il meccanismo funziona in demo e fallisce visibilmente su un sito fuori dalla lista — è il finding A&#8209;1, e viene rimosso in v0.0.4 con un filtro sul payload, non «sistemato» per altre vie.</figcaption>
+  </figure>
+
+  <ul class="findings">
+    <li><b>A-1</b> · Il boost su <code>KNOWN_SITES</code> antepone match letterali ai risultati vettoriali. Una domanda su un sito non in lista esercita il percorso semantico vero, con qualità visibilmente diversa.</li>
+    <li><b>A-2</b> · <code>next_point_id()</code> è un contatore in memoria: al riavvio dell'agent riparte da zero e i nuovi punti sovrascrivono i vecchi in Qdrant.</li>
+    <li><b>A-3</b> · Nessuna retention sulla collection. Misurato: da 1 943 a 7 862 punti in cinque ore, uno per evento, crescita lineare senza tetto.</li>
+    <li><b>A-8</b> · Il consumo parte con un ritardo di scoperta dei topic distribuito in [0, 5 min]: a stack freddo l'agent può non vedere ancora nulla.</li>
+  </ul>
+</section>
+
+<section class="section">
+  <div class="col">
+    <h2>§3 · Layer non collegati</h2>
+    <h3>Cosa si avvia senza essere attraversato</h3>
+    <p>Cinque servizi hanno una UI, una porta e nessun evento. Non sono un errore: sono le conversazioni successive, dichiarate come tali. La figura mostra anche <strong>l'unico collegamento nuovo</strong> della release in corso, che è il primo filo teso verso quel gruppo.</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1120 356" role="img" aria-label="I layer non collegati: Apicurio, Flink, MinIO, Trino e OpenMetadata avviati senza attraversamento di eventi; l'unica nuova connessione è il catalogo JDBC di Trino verso Postgres introdotto in v0.0.3">
+      <defs>
+        <marker id="cw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" class="s-fillw"/>
+        </marker>
+        <marker id="cd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" class="s-filld"/>
+        </marker>
+      </defs>
+
+      <text x="0" y="16" class="s-t3">CATENA ATTRAVERSATA</text>
+      <rect x="0" y="28" width="1120" height="62" rx="3" class="s-box-wired"/>
+      <text x="18" y="52" class="s-t">postgres → debezium → kafka → stream-agent → qdrant → ollama</text>
+      <text x="18" y="74" class="s-t2">profilo core · sempre avviata · coperta da T0.2 T0.3 T0.6 T0.8</text>
+
+      <text x="0" y="126" class="s-t3">AVVIATI, NON ATTRAVERSATI</text>
+
+      <rect x="0" y="140" width="206" height="92" rx="3" class="s-box-dormant"/>
+      <text x="16" y="164" class="s-t">apicurio-registry</text>
+      <text x="16" y="182" class="s-t2">:8081 · profilo lakehouse</text>
+      <text x="16" y="204" class="s-t2">Debezium usa JsonConverter</text>
+      <text x="16" y="220" class="s-t2">con schemi disabilitati:</text>
+      <text x="16" y="236" class="s-t2">nessuno schema registrato</text>
+
+      <rect x="222" y="140" width="206" height="92" rx="3" class="s-box-dormant"/>
+      <text x="238" y="164" class="s-t">flink jobmanager +</text>
+      <text x="238" y="182" class="s-t">taskmanager</text>
+      <text x="238" y="200" class="s-t2">:8082 · lakehouse</text>
+      <text x="238" y="222" class="s-t2">cluster attivo, nessun job</text>
+      <text x="238" y="238" class="s-t2">sottomesso dal repository</text>
+
+      <rect x="444" y="140" width="206" height="92" rx="3" class="s-box-dormant"/>
+      <text x="460" y="164" class="s-t">minio</text>
+      <text x="460" y="182" class="s-t2">:9000 :9001 · lakehouse</text>
+      <text x="460" y="204" class="s-t2">bucket creato all'avvio</text>
+      <text x="460" y="220" class="s-t2">e mai scritto: nessun</text>
+      <text x="460" y="236" class="s-t2">produttore lo alimenta</text>
+
+      <rect x="666" y="140" width="206" height="92" rx="3" class="s-box-flag"/>
+      <text x="682" y="164" class="s-t">trino</text>
+      <text x="682" y="182" class="s-t2">:8080 · lakehouse</text>
+      <text x="682" y="204" class="s-tf">catalogo postgresql</text>
+      <text x="682" y="220" class="s-t2">aggiunto in v0.0.3</text>
+      <text x="682" y="236" class="s-t2">nessun catalogo su MinIO</text>
+
+      <rect x="888" y="140" width="232" height="92" rx="3" class="s-box-dormant"/>
+      <text x="904" y="164" class="s-t">openmetadata + elasticsearch</text>
+      <text x="904" y="182" class="s-t2">:8585 :9200 · governance</text>
+      <text x="904" y="204" class="s-t2">catalogo vuoto, nessuna</text>
+      <text x="904" y="220" class="s-t2">ingestion configurata</text>
+      <text x="904" y="236" class="s-t2">lineage assente</text>
+
+      <path d="M769 232 L769 276 L104 276 L104 90" class="s-line-flag" marker-end="url(#cw)"/>
+      <text x="330" y="270" class="s-tf">v0.0.3 · JDBC su postgres:5432/sales — il primo filo verso questo gruppo</text>
+
+      <text x="0" y="316" class="s-t3">CONGELATI FINO A DOPO v0.1.0-beta1</text>
+      <text x="0" y="338" class="s-t2">job Flink · tabelle Iceberg · metastore per MinIO · manifest Kubernetes — decisione §4.4 della review</text>
+    </svg>
+    <figcaption><b>Il catalogo Trino è il primo collegamento reale verso il gruppo dormiente</b>, e non a caso arriva insieme al test che lo verifica: T0.7 interroga <code>postgresql.public.orders</code> e passa solo se il catalogo esiste e risponde. Gli altri quattro restano dichiaratamente non collegati — la scelta è congelare la scenografia fino a dopo la beta1 invece di costruirla per riempire un diagramma.</figcaption>
+  </figure>
+</section>
+
+<section class="section">
+  <div class="col">
+    <h2>§4 · Deployment</h2>
+    <h3>Profili, tetti di memoria, superficie esposta</h3>
+    <p>Da v0.0.3 i servizi sono divisi in tre profili e ognuno ha un tetto di memoria. Le due cose sono legate: senza tetto, una JVM si dimensiona sulla RAM dell'host, e su una macchina da 235 GiB non converge — misurato, Trino da 4,1 a 6,8 GiB in cinque ore. Tutte le porte sono legate a <code>127.0.0.1</code>.</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1120 300" role="img" aria-label="Tre profili compose: core sempre attivo con la pipeline, lakehouse e governance opzionali, con i tetti di memoria dichiarati per gruppo">
+      <rect x="0" y="26" width="360" height="228" rx="4" class="s-box-wired"/>
+      <text x="18" y="52" class="s-t">PROFILO core</text>
+      <text x="18" y="72" class="s-t2">senza tag · sempre avviato</text>
+      <text x="18" y="102" class="s-t2">kafka 1536m · debezium-connect 1536m</text>
+      <text x="18" y="122" class="s-t2">postgres 512m · qdrant 512m</text>
+      <text x="18" y="142" class="s-t2">stream-agent 512m · data-generator 128m</text>
+      <text x="18" y="162" class="s-t2">kafka-ui 512m · adminer 128m</text>
+      <text x="18" y="182" class="s-t2">open-webui 512m · landing 64m</text>
+      <text x="18" y="202" class="s-t2">ollama — nessun tetto, di proposito:</text>
+      <text x="18" y="218" class="s-t2">il bisogno lo fissa il modello del tier</text>
+      <text x="18" y="242" class="s-tw">è la catena che porta dati</text>
+
+      <rect x="378" y="26" width="342" height="228" rx="4" class="s-box-dormant"/>
+      <text x="396" y="52" class="s-t">PROFILO lakehouse</text>
+      <text x="396" y="72" class="s-t2">--profile lakehouse</text>
+      <text x="396" y="102" class="s-t2">trino 2560m</text>
+      <text x="396" y="122" class="s-t2">flink-jobmanager 1024m</text>
+      <text x="396" y="142" class="s-t2">flink-taskmanager 1024m</text>
+      <text x="396" y="162" class="s-t2">schema-registry 512m</text>
+      <text x="396" y="182" class="s-t2">minio 512m · create-bucket 64m</text>
+      <text x="396" y="212" class="s-t2">Trino ha anche jvm.config:</text>
+      <text x="396" y="228" class="s-t2">-Xms1G -Xmx2G, non più 80% dell'host</text>
+
+      <rect x="738" y="26" width="382" height="228" rx="4" class="s-box-dormant"/>
+      <text x="756" y="52" class="s-t">PROFILO governance</text>
+      <text x="756" y="72" class="s-t2">--profile governance</text>
+      <text x="756" y="102" class="s-t2">openmetadata 2048m</text>
+      <text x="756" y="122" class="s-t2">elasticsearch 1536m — heap -Xmx1g fisso</text>
+      <text x="756" y="142" class="s-t2">openmetadata-db 512m</text>
+      <text x="756" y="162" class="s-t2">execute-migrate-all 1024m</text>
+      <text x="756" y="202" class="s-t2">il gruppo più pesante, e quello</text>
+      <text x="756" y="218" class="s-t2">che nessun evento attraversa</text>
+
+      <text x="0" y="284" class="s-t2">Misurato sullo stack pieno SENZA tetti: 14,26 GiB di mediana, Trino da solo il 41% — il numero che i tetti esistono per fermare.</text>
+    </svg>
+    <figcaption><b>I profili non sono organizzazione, sono una risposta a un difetto misurato.</b> Prima di v0.0.3 lo stack avviava sempre tutto e nessun servizio aveva un tetto: i «tier hardware» del README erano documentazione, non un vincolo a runtime. Il secondo soak della notte del 27 agosto misura la stessa configurazione con i tetti attivi, per confronto diretto con la curva senza.</figcaption>
+  </figure>
+
+  <div class="tablewrap">
+    <table>
+      <caption>Superficie esposta — tutte le porte su 127.0.0.1 da v0.0.2</caption>
+      <thead><tr><th>Servizio</th><th>Immagine</th><th>Porta host</th><th>Profilo</th><th>Tetto</th></tr></thead>
+      <tbody>
+        <tr><td>kafka</td><td>apache/kafka:4.3.1</td><td class="port">9092 · 29092</td><td><span class="tag t-core">core</span></td><td class="num">1536m</td></tr>
+        <tr><td>debezium-connect</td><td>debezium/connect:2.7.3.Final</td><td class="port">8083</td><td><span class="tag t-core">core</span></td><td class="num">1536m</td></tr>
+        <tr><td>postgres</td><td>postgres:16</td><td class="port">5432</td><td><span class="tag t-core">core</span></td><td class="num">512m</td></tr>
+        <tr><td>qdrant</td><td>qdrant/qdrant:v1.19.0</td><td class="port">6333 · 6334</td><td><span class="tag t-core">core</span></td><td class="num">512m</td></tr>
+        <tr><td>stream-agent</td><td>build locale · FastAPI</td><td class="port">8500</td><td><span class="tag t-core">core</span></td><td class="num">512m</td></tr>
+        <tr><td>ollama</td><td>ollama/ollama:0.33.1</td><td class="port">11434</td><td><span class="tag t-core">core</span></td><td class="num">—</td></tr>
+        <tr><td>open-webui</td><td>open-webui:v0.11.1</td><td class="port">3000</td><td><span class="tag t-core">core</span></td><td class="num">512m</td></tr>
+        <tr><td>kafka-ui</td><td>provectuslabs/kafka-ui:v0.7.2</td><td class="port">8088</td><td><span class="tag t-core">core</span></td><td class="num">512m</td></tr>
+        <tr><td>adminer</td><td>adminer:5.5.1</td><td class="port">8090</td><td><span class="tag t-core">core</span></td><td class="num">128m</td></tr>
+        <tr><td>landing-page</td><td>nginx:alpine</td><td class="port">8000</td><td><span class="tag t-core">core</span></td><td class="num">64m</td></tr>
+        <tr><td>trino</td><td>trinodb/trino:463</td><td class="port">8080</td><td><span class="tag t-lake">lakehouse</span></td><td class="num">2560m</td></tr>
+        <tr><td>flink-jobmanager</td><td>flink:1.19.1-scala_2.12</td><td class="port">8082</td><td><span class="tag t-lake">lakehouse</span></td><td class="num">1024m</td></tr>
+        <tr><td>schema-registry</td><td>apicurio/apicurio-registry:3.0.9</td><td class="port">8081</td><td><span class="tag t-lake">lakehouse</span></td><td class="num">512m</td></tr>
+        <tr><td>minio</td><td>minio:RELEASE.2025-09-07</td><td class="port">9000 · 9001</td><td><span class="tag t-lake">lakehouse</span></td><td class="num">512m</td></tr>
+        <tr><td>openmetadata</td><td>openmetadata/server:1.7.0</td><td class="port">8585</td><td><span class="tag t-gov">governance</span></td><td class="num">2048m</td></tr>
+        <tr><td>elasticsearch</td><td>elasticsearch:8.15.0</td><td class="port">9200</td><td><span class="tag t-gov">governance</span></td><td class="num">1536m</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <b>Vincolo di aggiornamento.</b> Il cambio d'immagine Kafka porta l'utente del container da <code>uid 1001 gid 0</code> a <code>uid 1000 gid 1000</code>: un volume <code>kafka_data</code> popolato dall'immagine precedente resta di proprietà del gruppo root e il broker va in crash&#8209;loop. Chi aggiorna rimuove volume e directory <code>trino/catalog</code> <em>prima</em> del <code>git pull</code>; il preflight rileva entrambe le condizioni e si ferma con il rimedio.
+  </div>
+</section>
+
+<section class="section">
+  <div class="col">
+    <h2>§5 · Misura</h2>
+    <h3>Dove ogni affermazione viene verificata</h3>
+    <p>La parte del progetto che decide cosa è vero non è nello stack: è nell'harness e nei tre livelli di CI. Ognuno esercita un ambiente diverso, e <strong>ciò che nessuno di essi può vedere</strong> è la ragione per cui esiste il terzo.</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1120 320" role="img" aria-label="Topologia di misura: ci-static, ci-smoke con mock-ollama su runner GitHub, ci-nightly su runner self-hosted della workstation, e archiviazione dei run">
+      <defs>
+        <marker id="dw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" class="s-fillw"/>
+        </marker>
+      </defs>
+
+      <rect x="0" y="24" width="200" height="66" rx="3" class="s-box"/>
+      <text x="16" y="48" class="s-t">push su branch</text>
+      <text x="16" y="66" class="s-t2">release/vX.Y.Z</text>
+      <text x="16" y="82" class="s-t2">o develop</text>
+
+      <path d="M200 57 L246 57" class="s-line-wired" marker-end="url(#dw)"/>
+
+      <rect x="248" y="0" width="250" height="72" rx="3" class="s-box"/>
+      <text x="264" y="24" class="s-t">ci-static</text>
+      <text x="264" y="42" class="s-t2">yamllint · ruff · hadolint</text>
+      <text x="264" y="60" class="s-t2">T0.1 T0.12 T-REPRO · ~20 s</text>
+
+      <rect x="248" y="84" width="250" height="86" rx="3" class="s-box"/>
+      <text x="264" y="108" class="s-t">ci-smoke</text>
+      <text x="264" y="126" class="s-t2">runner GitHub · mock-ollama</text>
+      <text x="264" y="144" class="s-t2">stack CDC completo · ~8 min</text>
+      <text x="264" y="162" class="s-t2">testa la pipeline, non il modello</text>
+
+      <rect x="248" y="184" width="250" height="86" rx="3" class="s-box-wired"/>
+      <text x="264" y="208" class="s-t">ci-nightly</text>
+      <text x="264" y="226" class="s-t2">runner self-hosted [env-w]</text>
+      <text x="264" y="244" class="s-t2">modelli Granite reali · ~12 min</text>
+      <text x="264" y="262" class="s-t2">innesco manuale: RUN_NIGHTLY off</text>
+
+      <path d="M498 227 L556 227" class="s-line-wired" marker-end="url(#dw)"/>
+
+      <rect x="558" y="184" width="240" height="86" rx="3" class="s-box-wired"/>
+      <text x="574" y="208" class="s-t">ENV-W · workstation</text>
+      <text x="574" y="226" class="s-t2">RTX 3090 24 GiB · 235 GiB RAM</text>
+      <text x="574" y="244" class="s-t2">due stati: manutenzione / noleggio</text>
+      <text x="574" y="262" class="s-t2">finestre GPU su prenotazione</text>
+
+      <path d="M798 227 L856 227" class="s-line-wired" marker-end="url(#dw)"/>
+
+      <rect x="858" y="184" width="262" height="86" rx="3" class="s-box-wired"/>
+      <text x="874" y="208" class="s-t">archiviazione RUN_ID</text>
+      <text x="874" y="226" class="s-t2">docs/runs/&lt;id&gt;.md nel repo</text>
+      <text x="874" y="244" class="s-t2">grezzi + SHA256SUMS fuori repo</text>
+      <text x="874" y="262" class="s-t2">manifest: esclusività dichiarata</text>
+
+      <rect x="558" y="24" width="562" height="132" rx="3" class="s-box-flag"/>
+      <text x="574" y="48" class="s-t">Ciò che nessuna CI può vedere</text>
+      <text x="574" y="74" class="s-t2">Ogni run di CI parte da zero: volumi inesistenti, workspace pulito, clone nuovo.</text>
+      <text x="574" y="94" class="s-t2">Esercita quindi sistematicamente l'unico caso che funziona.</text>
+      <text x="574" y="120" class="s-tf">P-11 volume incompatibile · P-12 directory root-owned · P-13 git pull su clone usato</text>
+      <text x="574" y="140" class="s-t2">Tre difetti reali, trovati solo da una macchina con una storia.</text>
+    </svg>
+    <figcaption><b>Il riquadro in alto a destra è la ragione per cui questo progetto prenota finestre su hardware reale.</b> Non è una lacuna di copertura che si chiude aggiungendo test: è una classe di stato — quello che una macchina accumula nel tempo — che la CI non visita mai, per costruzione. I tre difetti elencati sono stati trovati in un solo giorno, tutti su ENV&#8209;W, tutti invisibili a una suite verde.</figcaption>
+  </figure>
+</section>
+
+<section class="section">
+  <div class="col">
+    <h2>§6 · Numeri</h2>
+    <h3>Le misure che sostengono il disegno</h3>
+    <p>Ogni cifra qui sotto viene da un run archiviato, non da una stima. Sono i valori che rendono questo documento un LLD e non un diagramma di intenzioni.</p>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <caption>Misure su ENV-W, in finestra di manutenzione dichiarata</caption>
+      <thead><tr><th>Grandezza</th><th>Valore</th><th>Condizione</th></tr></thead>
+      <tbody>
+        <tr><td>VRAM, ingestione continua</td><td class="num">362 MiB</td><td>mediana su 282 campioni; sopra 1 GiB l'1,06% del tempo</td></tr>
+        <tr><td>VRAM, con chat attiva</td><td class="num">≈ 6 500 MiB</td><td>granite4:1b + granite-embedding:30m caricati</td></tr>
+        <tr><td>VRAM, modello 32b</td><td class="num">19 788 / 24 576 MiB</td><td>granite4:32b-a9b-h, 100% GPU, contesto 32k</td></tr>
+        <tr><td>RSS stack pieno senza tetti</td><td class="num">14,26 GiB</td><td>mediana; Trino da solo il 41%</td></tr>
+        <tr><td>Crescita Trino senza tetto</td><td class="num">4,1 → 6,8 GiB</td><td>in cinque ore, non ancora stabilizzata</td></tr>
+        <tr><td>Eventi indicizzati vs righe DB</td><td class="num">divario 94–96</td><td>su ~7 000 eventi in sei ore: nessuna perdita</td></tr>
+        <tr><td>WAL trattenuto dallo slot</td><td class="num">≈ 6 KB</td><td>slot attivo in ogni campione: il consumer sta al passo</td></tr>
+        <tr><td>Punti Qdrant</td><td class="num">1 943 → 7 862</td><td>uno per evento, crescita lineare senza tetto (A-3)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <b>Un numero che va letto con la sua condizione.</b> Il run di riferimento del 26 agosto riporta 9,52 GiB per diciannove container ed è stato citato per due giorni come «quanto pesa lo stack». È una lettura presa poco dopo l'avvio: corretta per gli esiti dei test che registrava, fuorviante come footprint, perché misura a freddo una grandezza che cresce per ore. È il motivo per cui il piano prevede un soak — nessuna suite che parte, misura e chiude in un quarto d'ora può vedere una curva del genere.
+  </div>
+</section>
+
+<footer>
+  NORTHSTREAM · LLD generato dai file di configurazione e dal codice al commit di riferimento · le cifre provengono da <code>docs/runs/</code>
+</footer>
+
+</div>
+</body>
+</html>

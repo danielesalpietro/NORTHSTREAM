@@ -133,7 +133,13 @@ Gravità pratica alta, benché il difetto sia banale: chi segue le istruzioni al
 
 **G-2 [MINOR] — `decimal.handling.mode: double` trasforma denaro in float.** Scelta giusta per la leggibilità della demo (il default produce base64), ma `NUMERIC(12,2)` → double IEEE è precisamente l'errore che un data platform "governed" dovrebbe insegnare a non fare. L'alternativa `string` preserva l'esattezza restando leggibile. Almeno, andrebbe nominata come trade-off consapevole nel demo-script.
 
-**G-3 [MINOR] — "Realistic" è generoso.** Ritmo costante (un evento ogni 3 s esatti), distribuzioni uniformi, nessun burst, nessuna stagionalità, 50/50 fisso orders/sensors. Per la demo attuale è sufficiente; per il claim "realistic orders and sensor events" del README, no. Non prioritario — ma se mai si vorrà demo-are Flink (finestre, aggregazioni), serviranno pattern temporali veri, e questo file sarà il primo da riscrivere.
+**G-3 [MAJOR — ripromosso il 27/08/2026 da MINOR] — I dati sintetici non raccontano nulla, e questo blocca la dimostrazione di valore.** Ritmo costante (un evento ogni 3 s esatti), distribuzioni uniformi, nessun burst, nessuna stagionalità, 50/50 fisso orders/sensors. Per la demo attuale è sufficiente; per il claim "realistic orders and sensor events" del README, no.
+
+**Perché la classificazione originale era sbagliata.** L'avevo dato per un dettaglio di realismo, rimandabile. Ma con l'introduzione di **O8** (casi d'uso dimostrabili) diventa un **prerequisito della dimostrazione di valore**, non un abbellimento. Il caso d'uso *"Acme ha ordinato 12 pompe, possiamo impegnarci sulla consegna?"* richiede che i dati abbiano una struttura narrativa: che Plant-B **produca davvero** quella linea di prodotto, che le anomalie **si raggruppino** invece di essere rumore uniforme, che Acme abbia **uno storico** con cui confrontare l'ordine di oggi. Con distribuzioni uniformi e nessuna correlazione, quella domanda non ha una risposta interessante — e la demo non racconta niente.
+
+Lo stesso vale per **O9**: "cos'è cambiato" presuppone che qualcosa possa cambiare in modo riconoscibile. Un flusso a ritmo costante con anomalie casuali all'8% non ha un "prima" e un "dopo" distinguibili; l'assistente non può che inventare significato, che è esattamente il modo in cui un assistente explain-change fallisce.
+
+**Assegnato a v0.0.6** insieme a O8/O9. Il generatore va riscritto con: stabilimenti associati a linee di prodotto, anomalie che si presentano in cluster temporali con una causa implicita, ritmo variabile, e clienti con profili d'ordine distinguibili.
 
 **G-4 [MINOR] — kafka-python 2.0.2** è del 2020 e il progetto originale è rimasto dormiente per anni (il pin a Python 3.11 evita l'incompatibilità nota con 3.12). Funziona, ma `confluent-kafka` (librdkafka) sarebbe più solido e coerente con la narrativa; da valutare solo insieme ad A-4.
 

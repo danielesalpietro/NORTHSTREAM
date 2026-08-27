@@ -53,8 +53,8 @@ tempo. Issue di fase [#4](https://github.com/danielesalpietro/NORTHSTREAM/issues
 
 | Sub-issue | Contenuto | Finding | Stato |
 |---|---|---|---|
-| [#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16) | Doppio listener Kafka (interno `kafka:9092`, esterno `localhost:29092`) | P-1 | **implementato**, da confermare su ci-smoke |
-| [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17) | Pin immagini a versione+digest; sostituzione di `bitnamilegacy/kafka` | P-3, P-4 | **implementato**, da confermare su ci-smoke |
+| [#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16) | Doppio listener Kafka (interno `kafka:9092`, esterno `localhost:29092`) | P-1 | **T0.6 PASS, verificato su ci-smoke** (run 33057147479) |
+| [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17) | Pin immagini a versione+digest; sostituzione di `bitnamilegacy/kafka` | P-3, P-4 | **implementato**; il cambio d'immagine ha regredito T0.2/T0.3 nell'harness (PATH), corretto — da riconfermare su ci-smoke |
 | [#18](https://github.com/danielesalpietro/NORTHSTREAM/issues/18) | Binding porte su `127.0.0.1` | P-7 | **implementato**, verificato staticamente |
 | [#19](https://github.com/danielesalpietro/NORTHSTREAM/issues/19) | Script preflight (`vm.max_map_count`, RAM, GPU) | P-6 | **implementato**, eseguito in sandbox; `.ps1` da collaudare su Windows/ENV-L |
 | [#41](https://github.com/danielesalpietro/NORTHSTREAM/issues/41) | Bit di esecuzione sui tre script del Quick Start | **P-9** | **chiuso e verificato su ENV-W**: lo step `./start-addon.sh --gpu` della nightly è verde |
@@ -212,13 +212,16 @@ vuoto. Dettaglio in `docs/runs/20260827-0859-envw-9082a02.md`.
 - **La 3090 di ENV-W è condivisa** con un container estraneo al progetto
   (`C.48865947`, vast.ai): 11,6–22,3 GiB dei 24,5 occupati durante la verifica.
   Variabile non controllata di ogni misura su ENV-W.
-- **`ci-smoke` sul push di B è rosso, ma non per la KRaft**: run 33057147479,
-  `{"PASS": 3, "FAIL": 2, "XFAIL": 2}`. **T0.6 è PASS** — il progression test della
-  release è flippato, P-1 chiuso nel comportamento. I due FAIL (T0.2, T0.3) sono
-  **nell'harness**: `t0.02` e `t0.03` invocano `kafka-topics.sh` /
-  `kafka-console-consumer.sh` per nome nudo, e in `apache/kafka:4.3.1` i binari stanno
-  in `/opt/kafka/bin/` e non nel PATH (verificato con `docker run`). Fix di due righe,
-  **spetta a sessione B**; v. l'addendum in fondo alla entry ENV-W del 27/08.
+- **`ci-smoke` sul push di B era rosso, non per la KRaft — corretto, da riconfermare**:
+  run 33057147479, `{"PASS": 3, "FAIL": 2, "XFAIL": 2}`. **T0.6 era PASS** — il
+  progression test della release è flippato, P-1 chiuso nel comportamento. I due
+  FAIL (T0.2, T0.3) erano **nell'harness**: `t0.02` e `t0.03` invocavano
+  `kafka-topics.sh` / `kafka-console-consumer.sh` per nome nudo, e in
+  `apache/kafka:4.3.1` i binari stanno in `/opt/kafka/bin/` e non nel PATH
+  (verificato con `docker run`). **Sessione B ha corretto e pushato** (v. quarta
+  entry del 27/08): entrambi i test ora provano il path assoluto per primo, con
+  fallback al nome nudo. **Da riconfermare**: nessun run reale dopo il fix in
+  questa sessione (nessun demone Docker) — resta a `ci-smoke` sul nuovo push.
 - **La suite `full` sul codice di B** (`7364349` o successivo) resta da eseguire su
   ENV-W: il run del 27/08 misura `9082a02` e la sua riga T0.6 XFAIL **non** è il
   verdetto sul progression test della release.
@@ -233,14 +236,16 @@ La beta1 si sposta da metà a **fine settembre**. Il costo è accettato dall'own
 senza O8/O9 la beta1 sarebbe un sistema che passa i propri test tecnici e non
 dimostra niente a un utente finale.
 
-**Prossimo passo**: #42 è verificato; resta da controllare l'esito di
-`ci-static`/`ci-smoke` sul push di sessione B e far eseguire su ENV-W un nuovo run
-`full` contro `7364349` — è lì che si misura **T0.6**, il progression test dichiarato
-della release, e che si verifica che il binding `127.0.0.1` (#18) non abbia rotto
-T0.2/T0.3. Se entrambi verdi: #20 (gate di release, CHANGELOG →
-versione, README a fine release, tag). Se `ci-smoke` è rosso, diagnosticare a
-partire dai log del job (probabile causa: configurazione KRaft dell'immagine
-Apache, v. "Aperto").
+**Prossimo passo**: #42 è verificato; il fix del PATH Kafka nell'harness è
+pushato (v. quarta entry del 27/08) — resta da controllare l'esito di
+`ci-static`/`ci-smoke` sul nuovo push e far eseguire su ENV-W un nuovo run
+`full` contro il commit del fix — è lì che si misura **T0.6** in modo definitivo
+(progression test dichiarato della release) e che si conferma T0.2/T0.3 tornati
+PASS senza che il binding `127.0.0.1` (#18) li abbia rotti diversamente. Se
+entrambi verdi: #20 (gate di release, CHANGELOG → versione, README a fine
+release, tag). Se `ci-smoke` è ancora rosso, il fix del PATH non ha bastato:
+ricontrollare l'esatto path dei binari nell'immagine `apache/kafka:4.3.1` prima
+di ipotizzare altro.
 
 ---
 
@@ -631,3 +636,48 @@ nudo, come già fa l'healthcheck.
    spenta è caduto. Accenderla resta una tua decisione e non è stata presa qui.
 2. **Warm-up gate della nightly** (v. "Non funziona / sospeso"): senza, i FAIL di T0.5 e
    T0.9 nelle notti future saranno rumore di condizione e non regressioni.
+
+---
+
+## 2026-08-27 (seconda entry) — sessione cloud (nessun demone Docker) — sessione B, `claude-sonnet-5`
+
+- **Obiettivo della sessione**: rispondere al check-in della supervisione — `ci-smoke`
+  rosso sul push precedente di questa sessione (run 33057147479), T0.2/T0.3 regrediti
+  da PASS a FAIL. Diagnosi già fatta e verificata per misura dalla sessione ENV-W
+  (v. entry precedente): non riprodotta qui, solo applicato il fix.
+- **Fatto**:
+  - `git pull --rebase origin release/v0.0.2` per integrare i commit di sessione A
+    (`83b416c`, `5534ef7`) e della sessione ENV-W/supervisione (`9082a02`, `62a424b`,
+    `be70f93`) arrivati nel frattempo.
+  - Fix in `bench/t0/tests/t0.02_stack_health.sh` e `t0.03_cdc_sentinel.sh`: entrambi
+    provano `/opt/kafka/bin/<comando>` per primo, con fallback al nome nudo (stesso
+    pattern già in uso nell'healthcheck del compose) — commit successivo, v. SHA in
+    testa dopo il push.
+- **Decisioni prese**: nessuna nuova — il fix è meccanico e la diagnosi non era da
+  rifare (indicazione esplicita del check-in). L'unica scelta è stata *dove* mettere
+  l'assoluto: prima del nome nudo, non dopo, così un'immagine futura che avesse i
+  binari in entrambi i posti userebbe sempre il percorso noto per costruzione invece
+  di dipendere dall'ordine di risoluzione del PATH.
+- **Test eseguiti**:
+  - `bash -n` su entrambi i file modificati → sintassi valida.
+  - Simulazione locale (senza container) delle due catene di fallback via `sh -c`
+    con lo stesso comando costruito dallo script: entrambe risolvono nell'ordine
+    atteso (assoluto → nome nudo), verificato che `$cmd` in `t0.03` resti
+    letterale nella stringa passata a `sh -c` del container e non venga espanso
+    prematuramente dalla bash esterna.
+  - `bash bench/t0/run.sh --suite static` → `T0.1 PASS, T0.12 PASS, T-REPRO PASS`,
+    nessuna regressione.
+  - **Non eseguibile qui**: T0.2/T0.3 stessi, servono un demone Docker e un broker
+    reale — la riconferma spetta a `ci-smoke` sul push di questa entry.
+  - `yamllint`/`ruff` puliti (invariato).
+- **Costo della sessione**: `claude-sonnet-5` (come configurato), stessa sessione
+  dell'entry precedente — turno ripreso dopo un check-in schedulato, non una nuova
+  sessione.
+- **Non funziona / sospeso**: la riconferma di T0.2/T0.3/T0.6 su `ci-smoke` e la
+  suite `full` su ENV-W restano aperte, come già in "Aperto" nella testa.
+- **Prossimo passo per la sessione successiva**: verificare che `ci-smoke` sia
+  verde sul push di questa entry; se sì, è il segnale che manca ancora un run
+  `full` su ENV-W per T0.6/non-regressione prima di #20. Se `ci-smoke` è ancora
+  rosso, il fix del PATH non è bastato — controllare l'esatto layout binari di
+  `apache/kafka:4.3.1` (potrebbe essere cambiato path o nome) prima di altre
+  ipotesi.

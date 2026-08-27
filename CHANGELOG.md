@@ -96,6 +96,20 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
   volumi di stato esercitati dalla suite T0 (Kafka, Postgres, Qdrant),
   preservando `ollama_data` — evita di ricancellare i modelli Granite a ogni
   notte (P-10, [#42](https://github.com/danielesalpietro/NORTHSTREAM/issues/42)).
+- `bench/t0/tests/t0.02_stack_health.sh` e `t0.03_cdc_sentinel.sh` chiamavano
+  `kafka-topics.sh`/`kafka-console-consumer.sh` per nome nudo, contando sul
+  PATH. Nell'immagine Bitnami quei binari erano in PATH; in `apache/kafka:4.3.1`
+  (#17) stanno in `/opt/kafka/bin/` e non lo sono — verificato dalla sessione
+  ENV-W con `docker run --entrypoint sh apache/kafka:4.3.1 -c 'command -v
+  kafka-topics.sh; ls /opt/kafka/bin/kafka-topics.sh'`. **Difetto della sonda,
+  non del broker**: T0.6 (client host) e l'healthcheck del compose, che già
+  usa il path assoluto, restavano verdi durante il run rosso di `ci-smoke`
+  (33057147479). Entrambi i test ora provano il path assoluto per primo, con
+  fallback al nome nudo — lo stesso pattern già in uso nell'healthcheck —
+  così l'harness resta valido anche su un'immagine che li mettesse in PATH.
+  Corregge la regressione di T0.2/T0.3 introdotta da #17
+  ([#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16),
+  [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)).
 
 ## [v0.0.1] — 2026-08-26
 

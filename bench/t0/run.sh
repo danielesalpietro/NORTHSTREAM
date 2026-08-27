@@ -43,10 +43,14 @@ NS_TEST_TIMEOUT="${NS_TEST_TIMEOUT:-600}"
 
 # Suite composition. 'ci' matches the ci-smoke workflow (no GPU, mock Ollama);
 # 'static' needs neither a running stack nor a Docker daemon for T0.12.
-SUITE_CI="T0.1 T0.2 T0.3 T0.4 T0.8 T0.11"
-SUITE_STATIC="T0.1 T0.12"
-SUITE_CORE="T0.1 T0.2 T0.3 T0.4 T0.5 T0.6 T0.7 T0.8 T0.11 T0.12"
-SUITE_FULL="T0.1 T0.2 T0.3 T0.4 T0.5 T0.6 T0.7 T0.8 T0.9 T0.10 T0.11 T0.12"
+# T0.6 is in 'ci', not just 'full': it is the progression test v0.0.2
+# declares (P-1, dual Kafka listener), and it needs no model — only a host
+# client reaching the broker's EXTERNAL listener — so ci-smoke can run it on
+# every push instead of waiting for the nightly on ENV-W.
+SUITE_CI="T0.1 T0.2 T0.3 T0.4 T0.6 T0.8 T0.11"
+SUITE_STATIC="T0.1 T0.12 T-REPRO"
+SUITE_CORE="T0.1 T0.2 T0.3 T0.4 T0.5 T0.6 T0.7 T0.8 T0.11 T0.12 T-REPRO"
+SUITE_FULL="T0.1 T0.2 T0.3 T0.4 T0.5 T0.6 T0.7 T0.8 T0.9 T0.10 T0.11 T0.12 T-REPRO"
 
 while (($#)); do
     case "$1" in
@@ -75,10 +79,19 @@ if [[ -n "$ONLY" ]]; then
 fi
 
 test_script() {
-    local id="${1#T0.}"
-    printf -v id '%02d' "$id" 2>/dev/null || return 1
-    local match
-    match="$(find "$HARNESS_DIR/tests" -name "t0.${id}_*.sh" | head -1)"
+    local raw="$1" match
+    if [[ "$raw" == T0.* ]]; then
+        local id="${raw#T0.}"
+        printf -v id '%02d' "$id" 2>/dev/null || return 1
+        match="$(find "$HARNESS_DIR/tests" -name "t0.${id}_*.sh" | head -1)"
+        [[ -n "$match" ]] && printf '%s' "$match"
+        return
+    fi
+    # Named tests outside the numeric T0.N series (e.g. T-REPRO) match a file
+    # named after a lowercase slug of the id, non-alnum chars collapsed to _.
+    local slug
+    slug="$(printf '%s' "$raw" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '_')"
+    match="$(find "$HARNESS_DIR/tests" -iname "${slug}_*.sh" | head -1)"
     [[ -n "$match" ]] && printf '%s' "$match"
 }
 

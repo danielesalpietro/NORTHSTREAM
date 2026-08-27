@@ -26,6 +26,39 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
   `open-webui` (`v0.11.1`) — digest risolti via API del registry (token anonimo
   Docker Hub / GHCR), nessun demone Docker disponibile in questa sessione
   (P-4, O3.2, [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)).
+- `docker-compose-northstream-ai.yml`: doppio listener Kafka — `INTERNAL`
+  (`kafka:9092`, usato dagli altri servizi del compose) ed `EXTERNAL`
+  (`localhost:29092`, pubblicato per un client sull'host), con
+  `advertised.listeners` coerente per ciascuno. Prima era un solo listener
+  `PLAINTEXT` annunciato come `kafka:9092` a tutti, compreso l'host — la causa
+  esatta di P-1 (T0.6). Progression test dichiarato della release: **T0.6
+  XFAIL → PASS** (P-1, O3.1, [#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16)).
+- `bench/t0/run.sh`: **T0.6 promosso nella suite `ci`** (oltre a `core`/`full`),
+  così il progression test della release gira a ogni push via `ci-smoke`
+  invece di aspettare la nightly su ENV-W — requisito esplicito del piano
+  per questa release ([#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16)).
+- `bench/t0/lib/common.sh`: default di `NS_KAFKA_HOST_BOOTSTRAP` spostato da
+  `localhost:9092` a `localhost:29092`, coerente col nuovo listener esterno
+  ([#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16)).
+- `bench/t0/`: nuovo test statico **T-REPRO** (`t_repro_digest_pin.sh`) —
+  verifica che le 8 immagini di P-3/P-4 restino pinnate a versione+digest;
+  aggiunto alle suite `static`, `core` e `full`. `run.sh` ora risolve anche
+  id di test non numerici (`test_script()`), non solo `T0.N`
+  ([#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)).
+- `bench/t0/expected/current.json`: `T0.6` da `XFAIL` a `PASS`, `T-REPRO`
+  aggiunto come `PASS`; `expected/baseline.json` **non toccato** (è il
+  contratto congelato della baseline, non si piega ai risultati di release
+  successive — CLAUDE.md §3.8/decisioni Fase 0).
+
+### Fixed
+- `bench/t0/lib/doc_truth.py`: `kafka_advertises_host()` cercava solo la
+  chiave Bitnami `KAFKA_CFG_ADVERTISED_LISTENERS`. Dopo la migrazione a
+  `apache/kafka` (#17) quella chiave non esiste più nel compose: il linter
+  T0.12 sarebbe rimasto **silenziosamente cieco** al comportamento reale del
+  broker (falso negativo su P-1) nel momento esatto in cui il README verrà
+  aggiornato con l'endpoint `localhost:29092` a fine release. Ora legge anche
+  `KAFKA_ADVERTISED_LISTENERS` ([#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16),
+  [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)).
 
 ### Fixed
 - Bit di esecuzione impostato sui tre script del Quick Start (`start-addon.sh`,

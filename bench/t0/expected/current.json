@@ -1,23 +1,23 @@
 {
-  "target": "v0.0.1",
+  "target": "v0.0.2",
   "source": "docs/piano_ricovero.md section 6 (release train)",
-  "description": "Expected outcome of every T0 test on the current release branch. It differs from baseline.json only where this release declares a progression test: v0.0.1 flips T0.12 by making the README true (finding D-1, D-2, P-1 doc).",
+  "description": "Expected outcome of every T0 test on the current release branch. It differs from the previous release only where a release declares a progression test: v0.0.1 flipped T0.12 (README truth); v0.0.2 flips T0.6 (dual Kafka listener, P-1) and adds T-REPRO (every pulled image pinned to version+digest, P-3/P-4) as a new, already-passing gate.",
   "expected": {
     "T0.1": "PASS",
     "T0.2": "PASS",
     "T0.3": "PASS",
     "T0.4": "PASS",
     "T0.5": "PASS",
-    "T0.6": "XFAIL",
+    "T0.6": "PASS",
     "T0.7": "XFAIL",
     "T0.8": "XFAIL",
     "T0.9": "XFAIL",
     "T0.10": "XFAIL",
     "T0.11": "XFAIL",
-    "T0.12": "PASS"
+    "T0.12": "PASS",
+    "T-REPRO": "PASS"
   },
   "flips": {
-    "T0.6": "v0.0.2 (P-1)",
     "T0.7": "v0.0.3 (P-2)",
     "T0.8": "v0.0.4 (A-3)",
     "T0.9": "v0.0.4 (A-2)",

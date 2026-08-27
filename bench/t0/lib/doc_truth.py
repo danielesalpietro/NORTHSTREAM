@@ -184,7 +184,13 @@ def kafka_advertises_host(services: dict, port: str) -> bool:
     env = kafka.get("environment") or {}
     if isinstance(env, list):
         env = dict(item.split("=", 1) for item in env if "=" in item)
-    advertised = str(env.get("KAFKA_CFG_ADVERTISED_LISTENERS", ""))
+    # KAFKA_CFG_ADVERTISED_LISTENERS was Bitnami's key; the apache/kafka
+    # image that replaced it (P-3, issue #17) uses KAFKA_ADVERTISED_LISTENERS.
+    # Checking only the old key would make this linter silently blind to the
+    # broker's actual behaviour after that migration.
+    advertised = str(
+        env.get("KAFKA_ADVERTISED_LISTENERS", env.get("KAFKA_CFG_ADVERTISED_LISTENERS", ""))
+    )
     return f"localhost:{port}" in advertised or f"127.0.0.1:{port}" in advertised
 
 

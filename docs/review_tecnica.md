@@ -100,6 +100,11 @@ Il compose fa bind-mount di `./trino/catalog`, directory che **non esiste nel re
 
 Il difetto era invisibile finché la nightly girava una volta sola, ed è emerso al secondo tentativo. Va notato che **la sessione che lo subisce non può ripararlo**: rimuovere una directory `root:root` richiede `sudo`, che sul runner non è disponibile all'agente. La correzione strutturale è banale — committare `trino/catalog/.gitkeep`, così la directory esiste in git e Docker non la crea come root — ma lo sblocco della macchina resta un'azione dell'owner.
 
+**P-13 [MAJOR] — `.gitkeep` salva il checkout pulito, non il clone esistente. [Aggiunto il 27/08/2026, verificato per misura su ENV-W mentre si verificava il fix di P-12.]**
+Su un clone dove Docker ha già creato `trino/catalog` come `root:root`, `git pull` fallisce con `Permission denied` e **lascia l'albero a metà**: né alla versione vecchia né alla nuova. Il fix di P-12 copre il caso del workspace ripulito a ogni run, non quello di chi aggiorna un checkout che ha già fatto girare lo stack.
+
+**Vale però la pena leggere P-11, P-12 e P-13 insieme, perché sono un difetto solo visto da tre lati.** Il meccanismo è sempre lo stesso: *Docker gira come root e lascia in giro stato che l'utente non può toccare* — un volume nel primo caso, una directory nel secondo e nel terzo. E la ragione per cui nessuno dei tre è stato intercettato dalla CI è anch'essa una sola: **ogni run parte da zero**, quindi la nostra catena di verifica esercita sistematicamente l'unico caso che funziona. Non è una lacuna di copertura risolvibile aggiungendo test alla suite attuale: è una **classe di stato che la CI non visita mai**, e che solo una macchina con una storia — ENV-W, o il portatile di chi usa il lab da settimane — può esercitare. È l'argomento più forte emerso finora a favore delle finestre di verifica su hardware reale, e va tenuto presente quando si valuterà se la CI da sola basti come gate di release.
+
 ### 3.2 stream-agent (`app.py`)
 
 **A-1 [MAJOR] — Il retrieval della demo di punta non è semantico: è keyword matching con contorno RAG.**

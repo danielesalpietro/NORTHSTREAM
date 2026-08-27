@@ -263,7 +263,8 @@ remota senza Docker/GPU. Poi #23 (tier misurati + T-PROF, ENV-L) e #24
   (dichiarato esplicitamente nel messaggio di `fe91a74`), la classificazione
   **automatica** exclusive/shared, che è esattamente lo scope di questa
   sessione.
-- **Fatto**:
+- **Fatto** (commit `3232e38`, dopo rebase su `60929e8`/sessione C — SHA
+  annotato a push avvenuto, come da regola su branch condiviso):
   - **`bench/lib/gpu_exclusivity.py`** (nuovo, condiviso fra preflight e
     run.sh): risponde "la GPU è tutta nostra in questo momento?" —
     `nvidia-smi --query-compute-apps` per i processi di calcolo, attribuiti

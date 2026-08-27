@@ -63,10 +63,10 @@ tempo. Issue di fase [#4](https://github.com/danielesalpietro/NORTHSTREAM/issues
 | [#46](https://github.com/danielesalpietro/NORTHSTREAM/issues/46) | `trino/catalog` root-owned blocca `actions/checkout` alla nightly successiva | **P-12** | **implementato**: `.gitkeep` committato; verifica reale (due nightly consecutive) spetta a ENV-W, dopo che l'owner ha sbloccato il workspace col `sudo` che la sessione non ha |
 | [#20](https://github.com/danielesalpietro/NORTHSTREAM/issues/20) | Release v0.0.2: gate, CHANGELOG, tag | — | non iniziata |
 
-**Progression test dichiarati**: **T0.6** XFAIL → **PASS** dichiarato in
-`bench/t0/expected/current.json`, promosso anche nella suite `ci` (requisito
-esplicito del briefing, non solo `core`/`full`) — **da confermare su un
-broker reale**, non ancora osservato; **T-REPRO** nuovo, static, **verificato
+**Progression test dichiarati**: **T0.6** XFAIL → **PASS** — **misurato e confermato su
+broker reale il 27/08**, con modelli veri, in **due** nightly consecutive su `6b377a3`
+(run 33068899387 e 33069809809): probe `kcat` host-network che ottiene
+`broker 1 at localhost:29092 (controller)`. **P-1 è chiuso nel comportamento**; **T-REPRO** nuovo, static, **verificato
 PASS in questa sessione** (8/8 immagini di P-3/P-4 pinnate a digest); il
 preflight fallisce con messaggio chiaro — **verificato in sandbox** (v. sotto).
 

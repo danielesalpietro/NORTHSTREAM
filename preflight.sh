@@ -8,6 +8,7 @@
 #   - available RAM  >= tier floor (README hardware table)
 #   - free disk      >= tier floor (same table, current directory's filesystem)
 #   - an existing kafka_data volume is writable by apache/kafka's user (P-11)
+#   - no root-owned/unwritable directories in the repo tree (P-12, P-13)
 #   - NVIDIA GPU visible, only with --gpu (mirrors start-addon.sh --gpu)
 #
 # This is an explicit, separate step — NOT invoked automatically by
@@ -125,6 +126,25 @@ elif command -v docker >/dev/null 2>&1; then
     warn "docker CLI present but daemon not reachable — cannot check the kafka_data volume for P-11"
 else
     warn "docker not available — cannot check the kafka_data volume for P-11"
+fi
+
+# --- root-owned/unwritable directories in the repo tree (P-12, P-13) ---
+# Same mechanism as P-11, seen from a third side: Docker running as root
+# can auto-create a bind-mount target (e.g. trino/catalog, which does not
+# exist in the repository) as root:root. On a workspace that is wiped every
+# run this only breaks the *next* run's checkout (P-12); on a checkout
+# someone actually keeps and updates, it breaks 'git pull'/'git checkout'
+# outright with Permission denied, leaving the tree half-updated (P-13).
+# Scoped to directories: that is what actually blocks git and rmdir — a
+# read-only *file* the current user still owns does not.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+mapfile -t unwritable_dirs < <(find "$REPO_ROOT" -type d -not -writable 2>/dev/null)
+if (( ${#unwritable_dirs[@]} == 0 )); then
+    ok "no root-owned or otherwise unwritable directories in the repository tree"
+else
+    bad_list="$(printf '%s, ' "${unwritable_dirs[@]}")"
+    bad_list="${bad_list%, }"
+    err "not writable by the current user ($(id -un)): ${bad_list}. Docker most likely created this as root — the same mechanism as P-11/P-12: a container running as root auto-created a bind-mount target that did not exist. Left in place, this breaks 'git pull'/'git checkout' with Permission denied and leaves the working tree half-updated (P-13). This is Docker-managed state, not something to preserve: remove it with 'sudo rm -rf <path>' for each path above, then re-run this preflight."
 fi
 
 # --- GPU, only when --gpu was requested (mirrors start-addon.sh --gpu) ---

@@ -83,6 +83,31 @@ if ($dockerCmd) {
     Write-Warning "docker not available - cannot check the kafka_data volume for P-11"
 }
 
+# Root-owned/unwritable directories in the repo tree (P-12, P-13). Same
+# mechanism as P-11 seen from a third side: Docker (via Docker Desktop's
+# Linux VM) can auto-create a bind-mount target that does not exist in the
+# repository (trino/catalog) with ownership the checkout's own user cannot
+# touch. On a workspace wiped every run this only breaks the *next* run's
+# checkout (P-12); on a checkout someone keeps and updates, it breaks
+# 'git pull'/'git checkout' outright, leaving the tree half-updated (P-13).
+$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$badDirs = @(Get-ChildItem -Path $repoRoot -Recurse -Directory -ErrorAction SilentlyContinue | Where-Object {
+    $testFile = Join-Path $_.FullName ".preflight-write-test"
+    try {
+        [System.IO.File]::WriteAllText($testFile, "")
+        Remove-Item -Path $testFile -ErrorAction SilentlyContinue
+        $false
+    } catch {
+        $true
+    }
+})
+if ($badDirs.Count -eq 0) {
+    Write-Ok "no root-owned or otherwise unwritable directories in the repository tree"
+} else {
+    $badList = ($badDirs | ForEach-Object { $_.FullName }) -join ", "
+    Write-Fail "not writable by the current user: $badList. Docker most likely created this via its own Linux VM - the same mechanism as P-11/P-12: a container auto-created a bind-mount target that did not exist. Left in place, this breaks 'git pull'/'git checkout' and leaves the working tree half-updated (P-13). This is Docker-managed state, not something to preserve: remove each path above, then re-run this preflight."
+}
+
 if ($Gpu) {
     $nvidiaSmi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
     if ($nvidiaSmi) {

@@ -10,22 +10,53 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 
 ## [Unreleased]
 
-### ⚠ Breaking (lab esistenti)
-- **Chi aggiorna un lab NORTHSTREAM esistente a questa release deve rimuovere
-  il volume `kafka_data` prima del primo avvio** (`docker volume rm
-  wap-northstream-lab_kafka_data`, o `docker compose down -v` per un reset
-  completo). La sostituzione di `bitnamilegacy/kafka:3.7.1` con
-  `apache/kafka:4.3.1` (#17) cambia anche l'utente del container: da
-  `uid=1001 gid=0(root)` a `uid=1000(appuser) gid=1000`. Un volume popolato
-  dalla vecchia immagine resta `0:0` modo `775` — scrivibile dal gruppo
-  root, di cui il vecchio broker faceva parte e il nuovo no — e il broker
-  va in crash-loop con `AccessDeniedException`, un errore che non nomina né
-  i permessi né il cambio d'immagine (**P-11**,
-  [#45](https://github.com/danielesalpietro/NORTHSTREAM/issues/45)). Il
-  dato in quel volume è una cache locale effimera: rimuoverlo non perde
-  nulla che CDC non possa ricostruire. `preflight.sh`/`.ps1` (#19) ora
-  rileva questa condizione **prima** dell'avvio e fallisce con il comando
-  di rimedio — v. sotto.
+### ⚠ Breaking (lab esistenti) — leggere PRIMA di `git pull`
+
+Se stai aggiornando un checkout NORTHSTREAM che ha già fatto girare lo stack
+(non un `git clone` nuovo), esegui **questi comandi, in quest'ordine, prima
+di `git pull`** — farlo dopo, o non farlo, lascia l'albero a metà o il
+broker in crash-loop:
+
+```bash
+# 1. Rimuovi la directory che Docker ha creato come root (P-13): se esiste,
+#    blocca 'git pull'/'git checkout' con "Permission denied" a metà operazione.
+sudo rm -rf trino/catalog trino
+
+# 2. SOLO ORA, git pull:
+git pull
+
+# 3. Rimuovi il volume Kafka della vecchia immagine (P-11): dato locale
+#    effimero, nessuna perdita — CDC lo ricostruisce dal primo avvio.
+docker volume rm wap-northstream-lab_kafka_data 2>/dev/null || true
+# oppure, per un reset completo dello stack:
+docker compose down -v
+```
+
+**Perché**: `bitnamilegacy/kafka:3.7.1` → `apache/kafka:4.3.1` (#17) cambia
+anche l'utente del container Kafka, da `uid=1001 gid=0(root)` a
+`uid=1000(appuser) gid=1000`. Un volume `kafka_data` popolato dalla vecchia
+immagine resta `0:0` modo `775` — scrivibile dal gruppo root, di cui il
+vecchio broker faceva parte e il nuovo no — e il broker va in crash-loop con
+`AccessDeniedException`, un errore che non nomina né i permessi né il cambio
+d'immagine (**P-11**, [#45](https://github.com/danielesalpietro/NORTHSTREAM/issues/45)).
+`trino/catalog` non esiste nel repository ed è sempre stata creata da
+Docker al primo `up`; quando la crea come `root:root` (bind-mount di una
+directory assente), l'utente del checkout non può più toccarla — su un
+workspace CI ripulito a ogni run questo bloccava solo la nightly successiva
+alla prima (**P-12**, [#46](https://github.com/danielesalpietro/NORTHSTREAM/issues/46));
+sullo stesso clone di chi usa il lab da tempo, blocca direttamente `git
+pull` (**P-13**, [#48](https://github.com/danielesalpietro/NORTHSTREAM/issues/48)).
+
+**P-11, P-12 e P-13 sono lo stesso difetto visto da tre lati**: Docker gira
+come root e lascia in giro stato (un volume, una directory, la stessa
+directory dentro un clone) che l'utente non può toccare — e nessuno dei tre
+è visibile alla CI, perché ogni run parte da zero ed esercita sistematicamente
+l'unico caso che funziona. `preflight.sh`/`.ps1` (#19) ora rileva **entrambe**
+le condizioni prima dell'avvio (volume Kafka incompatibile, directory non
+scrivibili nell'albero del repository) e fallisce con causa, sintomo e
+rimedio — ma non sostituisce questi comandi per un clone già bloccato: non
+può correre finché `git pull` non ha già portato la sua stessa versione
+aggiornata sulla macchina.
 
 ### Changed
 - `docker-compose-northstream-ai.yml`: `bitnamilegacy/kafka:3.7.1` sostituito con
@@ -116,6 +147,23 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
   con `EACCES` nel ripulire il workspace (**P-12**,
   [#46](https://github.com/danielesalpietro/NORTHSTREAM/issues/46)). Con
   la directory già presente in git, Docker non la ricrea come root.
+- `preflight.sh` / `preflight.ps1`: nuovo controllo per **P-13** — cerca
+  directory non scrivibili dall'utente corrente nell'albero del
+  repository (`find -type d -not -writable` / un test di scrittura reale
+  in PowerShell), non solo il volume Docker di P-11: stesso meccanismo,
+  una directory come `trino/catalog` creata da un container che gira come
+  root invece di un volume, ma con lo stesso effetto — bloccare `git
+  pull`/`git checkout` con `Permission denied` a metà operazione
+  ([#48](https://github.com/danielesalpietro/NORTHSTREAM/issues/48)).
+  **Verificato in questa sessione** creando deliberatamente una directory
+  realmente non scrivibile (flag `chattr +i`, dato che questa sandbox gira
+  come root e un normale cambio di proprietario non l'avrebbe bloccata) in
+  un clone temporaneo: il controllo la rileva e fallisce col messaggio
+  corretto; ripristinata la scrivibilità, il controllo torna `OK`.
+  **La verifica sul meccanismo reale (proprietà `root:root` da Docker,
+  utente non privilegiato) non è verificabile in CI per costruzione — v.
+  P-11 — e spetta a ENV-W**, con lo stesso protocollo a tre stati (assente
+  / condizione rotta creata deliberatamente / condizione sana).
 
 ### Fixed
 - `bench/t0/lib/doc_truth.py`: `kafka_advertises_host()` cercava solo la

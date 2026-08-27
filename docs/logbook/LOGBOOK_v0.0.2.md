@@ -139,3 +139,55 @@ l'unico BLOCKER della review ancora aperto sul comportamento.
   (`RUN_NIGHTLY` off finché #42 non è chiuso, #40, P-5).
 - **Prossimo passo per la sessione successiva**: aprire `release/v0.0.2` da `develop`
   e avviare #16 (doppio listener Kafka, progression test T0.6) su `claude-sonnet-5`.
+
+## 2026-08-27 (seconda entry) — sessione remota (cloud) — supervisione
+
+- **Obiettivo della sessione**: rispondere alla domanda dell'owner *"con questa
+  revisione, è necessario aggiornare anche il README?"* e registrare l'esito dove
+  serve, cioè fuori da questa conversazione.
+- **Fatto**: verificato che **no**, e per due motivi indipendenti. (a) **Regola**:
+  CLAUDE.md §4 — il README descrive lo stato *rilasciato*, si aggiorna solo nel
+  release branch come ultimo commit prima del tag, ed è vietato aggiornarlo da
+  `develop` fra una release e l'altra; l'unica eccezione è la correzione di un claim
+  falso. La revisione di O9 non rilascia niente: descrive un obiettivo di v0.0.6.
+  (b) **Verifica di merito**, perché la regola da sola non basta: controllato che la
+  revisione non abbia reso falso qualcosa che il README già dice —
+  - riga 18-26 (*"What is actually wired today"*) rimanda esplicitamente a
+    `docs/piano_ricovero.md` per il work in progress: il README delega, il piano
+    dettaglia, nessuna divergenza;
+  - tabella **Layer status**, riga Flink — *"Not wired — the cluster runs, no job is
+    submitted by this repository"* — **resta vera**: O9.2 è post-beta1 e in beta1 il
+    produttore di `ChangeFact` è Python. Sarebbe diventata falsa se il README avesse
+    già attribuito a Flink il calcolo dei cambiamenti;
+  - **Roadmap**: non contiene Explain Change. È un'**omissione**, non una falsità, e
+    le omissioni non attivano l'eccezione.
+- **Debito documentale di v0.0.6** (registrato qui perché la sessione che chiuderà
+  quella release non dipenda dal ricordo di questa conversazione; riportato anche su
+  [#43](https://github.com/danielesalpietro/NORTHSTREAM/issues/43)):
+  1. **Roadmap**: aggiungere Explain Change fra le voci implementate, distinguendo
+     beta1 (detector Python) da post-beta1 (operatore Flink).
+  2. **Layer status, riga Flink**: alla v0.0.6 resta *Not wired*, ma con la
+     motivazione aggiornata — è il primo job con una ragione architetturale reale;
+     diventa **Wired** solo al porting O9.2.
+  3. **Contratto `ChangeFact`**: è l'unica parte di O9 che un utilizzatore esterno
+     vede, quindi va descritta nel README come contratto pubblico dell'agent.
+  4. **`docs/demo-script.md`**: con O8.3 smette di essere scritto a mano ed è
+     **generato** dai casi d'uso — cambia la natura del riferimento dal README, non
+     solo il testo.
+  **Vincolo su tutti e quattro**: **T0.12 deve restare verde** dopo la modifica. Il
+  linter di verità documentale verifica path, endpoint della tabella servizi e
+  coerenza della sezione License: il punto 3 non può quindi citare un file di schema
+  che non esiste ancora, e il punto 4 non può linkare un demo-script prima che il
+  generatore lo produca.
+- **Decisioni prese**: nessuna nuova. Confermata l'applicazione di §4 invece di
+  un'eccezione *ad hoc*: aggiornare il README "già che ci siamo" è esattamente il
+  meccanismo con cui il README torna a raccontare lavoro non rilasciato, che è il
+  difetto D-1 da cui è nata la review.
+- **Test eseguiti**: nessuno (sessione cloud senza ambiente di esecuzione). La
+  verifica sul README è **lettura**, non esecuzione: `grep` sulle sezioni Roadmap,
+  Layer status e sui riferimenti a `docs/`.
+- **Costo della sessione**: v. entry precedente di oggi (stessa sessione, misura non
+  ripetuta per non contarla due volte).
+- **Non funziona / sospeso**: nulla di nuovo.
+- **Prossimo passo per la sessione successiva**: invariato — aprire `release/v0.0.2`
+  da `develop` e avviare #16 su `claude-sonnet-5`.

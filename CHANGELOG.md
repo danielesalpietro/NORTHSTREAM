@@ -10,6 +10,23 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 
 ## [Unreleased]
 
+### Changed
+- `docker-compose-northstream-ai.yml`: `bitnamilegacy/kafka:3.7.1` sostituito con
+  `apache/kafka:4.3.1`, pinnato a versione+digest (P-3, P-4, O3.2,
+  [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)). Le env
+  `KAFKA_CFG_*` di Bitnami diventano `KAFKA_*` nel formato dell'immagine
+  ufficiale Apache; comportamento del broker (singolo listener `PLAINTEXT`,
+  ancora irraggiungibile dall'host) **invariato** in questo commit — il doppio
+  listener è #16, deliberatamente separato per non riscrivere la stessa
+  configurazione due volte su due immagini diverse.
+- `docker-compose-northstream-ai.yml` e `docker-compose.addon.yml`: le altre
+  sette immagini oggi su `:latest`/tag mobili pinnate a versione+digest —
+  `kafka-ui` (`v0.7.2`), `adminer` (`5.5.1`), `minio` (`RELEASE.2025-09-07T16-13-09Z`),
+  `mc` (`RELEASE.2025-08-13T08-35-41Z`), `qdrant` (`v1.19.0`), `ollama` (`0.33.1`),
+  `open-webui` (`v0.11.1`) — digest risolti via API del registry (token anonimo
+  Docker Hub / GHCR), nessun demone Docker disponibile in questa sessione
+  (P-4, O3.2, [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)).
+
 ### Fixed
 - Bit di esecuzione impostato sui tre script del Quick Start (`start-addon.sh`,
   `register-connector.sh`, `demo-compare.sh`), committati `100644` invece di

@@ -145,6 +145,39 @@ periodo tranquillo non verifica quindi che compaia la frase "non è successo nul
 
 **Criterio di scelta** (in ordine): ENV-L se basta il profilo `core` e < 2 h; ENV-W se serve profilo full, soak, o la 3090; ENV-R per tutto il resto o quando L/W sono occupati.
 
+### 2.1 Finestre GPU su ENV-W — si prenotano, non si occupano
+
+Vincolo dell'owner (27/08/2026): **la Z8 è disponibile per tutto il tempo necessario, ma la
+finestra di manutenzione va dichiarata con anticipo.** Chiudere la GPU in faccia a un
+noleggio in corso viola la policy di vast.ai, quindi non è una possibilità: si aspetta la
+fine del noleggio corrente e si blocca la successiva disponibilità.
+
+Ne discendono tre regole di pianificazione, che valgono più della disponibilità in sé.
+
+**1. Chi pianifica un run GPU dichiara durata *prima*, non dopo.** Una finestra si prenota
+in ore, e una stima sbagliata per difetto costa un secondo giro di prenotazione. Le durate
+note e stimate:
+
+| Run | Release | Esclusività | Durata | Anticipo |
+|---|---|---|---|---|
+| Suite `full` con modelli veri | ogni release | **Preferibile**: i modelli piccoli (1b+30m, 6,5 GiB) entrano anche in contesa, ma T0.5 e T0.9 sono sensibili ai tempi e in contesa mentono | **~15 min** (misurato: la nightly del 27/08 ha girato in 11 min) | poche ore |
+| **T-PROF** (profilo `core`, RSS ≤ 14 GB) | v0.0.3 | **Necessaria** su CPU e RAM, non sulla GPU — ma ENV-W resta un limite superiore per la RAM (v. riga ENV-W): il test vive su ENV-L | ~1 h | poche ore |
+| **T-SOAK-24h** | v0.0.4 | **Necessaria e continuativa** | **> 24 h** | **il più lungo del piano**: è l'unico run che non entra in una finestra breve |
+| **Matrice EVAL** (10 combinazioni) | v0.1.0-beta1 | **Necessaria e vincolante**: `granite4:32b-a9b-h` pesa 19 GB e con un tenant sui 22 GiB **non parte** | da stimare sulla prima combinazione misurata, poi moltiplicare | mezza giornata |
+
+**2. Una finestra prenotata si spende misurando, non debuggando.** È il rischio vero di
+questo modello: prenotare 24 ore per il soak e scoprire al quinto minuto che l'harness ha
+un difetto. Prima di ogni finestra prenotata si esegue quindi una **prova a secco** dello
+stesso comando — durata ridotta, stato condiviso accettato — con l'unico scopo di validare
+la catena (avvio, connettore, harness, archiviazione). La finestra vera parte solo se la
+prova a secco è verde.
+
+**3. La prenotazione entra nella pianificazione della release, non nella conversazione.**
+Quando una release dichiara un run GPU, la richiesta di finestra all'owner è parte della
+sua definition of done: va chiesta all'apertura della fase, non quando il codice è pronto.
+Altrimenti il codice aspetta la macchina, che è esattamente il tempo morto che il §6-bis
+cerca di eliminare.
+
 **Regola RunPod / packaging.** Lo stack compose completo gira solo dove c'è un demone Docker vero: ENV-L, ENV-W, o un host Docker privato remoto. Su RunPod si porta **il carico GPU impacchettato come immagine singola**, non lo stack:
 
 - `deploy/runpod/Dockerfile.eval` — immagine autosufficiente: Ollama (o vLLM per i modelli grandi) + harness di eval (`bench/eval/`) + fixtures. Entrypoint: pull modelli → esegue la matrice → scrive tutto in `/workspace/results/<RUN_ID>/`.

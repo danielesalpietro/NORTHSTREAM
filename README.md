@@ -146,7 +146,7 @@ definition of done, is the subject of the [Roadmap](#roadmap).
 | Layer | Service | Purpose | Default URL / Port |
 |---|---|---|---|
 | Landing Page | landing-page | Overview page linking to every service in the stack | [NORTHSTREAM Landing](http://localhost:8000) |
-| Streaming | Kafka | Event streaming backbone | in-network only: `kafka:9092` (see note below) |
+| Streaming | Kafka | Event streaming backbone | internal `kafka:9092` · external `localhost:29092` (see note below) |
 | Streaming UI | Kafka UI | Kafka topics, consumers, connectors visibility | [Kafka UI](http://localhost:8088) |
 | Schema Governance | Apicurio Registry | Schema registry compatible service | [Schema Registry](http://localhost:8081) |
 | Operational Source | PostgreSQL | Source transactional database | `localhost:5432` |
@@ -163,15 +163,23 @@ definition of done, is the subject of the [Roadmap](#roadmap).
 | Stream Context Agent | stream-agent | Grounds a small Ollama model in real-time Kafka/CDC events | [Stream Agent API](http://localhost:8500) |
 | Synthetic Data | data-generator | Continuously produces realistic orders and sensor events | (no UI, writes to PostgreSQL) |
 
-> **Note on the Kafka endpoint.** The broker advertises `PLAINTEXT://kafka:9092`,
-> a name that only resolves inside the Docker network. Port 9092 is published,
-> but a client on the host bootstraps successfully and then receives metadata
-> pointing at `kafka:9092`, which it cannot reach — so host tools such as
-> `kcat` or `kafka-console-consumer` do not work against it today. Consume from
-> inside a container (`docker exec northstream-kafka kafka-console-consumer.sh
-> --bootstrap-server kafka:9092 --topic northstream.public.sensor_readings`) or
-> use Kafka UI. A second, host-advertised listener is planned; the behaviour is
-> pinned by test `T0.6` in [`bench/t0/`](bench/).
+> **Note on the Kafka endpoints.** The broker runs two listeners: `INTERNAL`,
+> advertised as `kafka:9092` for other containers on the Docker network
+> (Debezium Connect, Kafka UI and the Stream Context Agent all use this one —
+> it does not resolve from the host), and `EXTERNAL`, advertised as
+> `localhost:29092` for a client running on the host. Point host-side tools
+> at the external listener: `kcat -b localhost:29092 -L`, or
+> `kafka-console-consumer.sh --bootstrap-server localhost:29092 --topic
+> northstream.public.sensor_readings` run locally. To consume from inside the
+> Docker network instead, use the internal listener:
+> `docker exec northstream-kafka kafka-console-consumer.sh --bootstrap-server
+> kafka:9092 --topic northstream.public.sensor_readings`, or browse via Kafka
+> UI. Behaviour pinned by test `T0.6` in [`bench/t0/`](bench/).
+
+> **Note on image reproducibility.** Every service above is pinned to a
+> specific version and content digest (`image:tag@sha256:...`), not `:latest`
+> or another mutable tag — the same clone produces the same stack months from
+> now. Verified by test `T-REPRO` in [`bench/t0/`](bench/).
 
 ---
 
@@ -194,6 +202,29 @@ Minimal is enough to see every layer of the pipeline working end to end;
 below 16 GB RAM, Elasticsearch and OpenMetadata alone will struggle to start.
 A GPU is never required, but it makes chat responses noticeably faster and
 lets you comfortably run the larger Granite variants.
+
+### Preflight check (recommended)
+
+Before starting the stack, `preflight.sh` / `preflight.ps1` check the things
+that otherwise fail silently ten minutes in: `vm.max_map_count` on native
+Linux (Elasticsearch/OpenMetadata will bootstrap-loop below `262144`, a
+value Docker Desktop and WSL2 already set for you), RAM and disk against the
+tier you picked, an NVIDIA driver if you pass `--gpu`, and — if you are
+updating an existing checkout — a `kafka_data` volume or a repository
+directory left behind by an older, incompatible container image. Each
+failure names its cause and the exact command that fixes it.
+
+```powershell
+.\preflight.ps1 -Tier recommended
+```
+
+```bash
+./preflight.sh --tier recommended
+```
+
+This is a separate, explicit step — it is not run automatically by
+`start-addon.sh`/`.ps1`, so a host it has never been tested against cannot
+turn a working Quick Start into a new failure mode.
 
 ### Per-tier examples
 
@@ -585,6 +616,8 @@ northstream/
 +-- LICENSE
 +-- index.html
 +-- dashboard.html
++-- preflight.sh
++-- preflight.ps1
 +-- start-addon.sh
 +-- start-addon.ps1
 +-- register-connector.sh

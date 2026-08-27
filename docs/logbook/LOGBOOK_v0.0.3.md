@@ -147,7 +147,7 @@ T-PROF, ENV-L) e #44 (sessione D, in corso).
 - **Obiettivo della sessione**: #22 (catalogo Trino + memoria, P-2, T0.7) e
   #21 (compose profiles + `mem_limit`, P-5), in quest'ordine, su
   `release/v0.0.3`.
-- **Fatto** (working tree, non ancora committato a questo punto — v. §6):
+- **Fatto** (commit `c471707`, dopo rebase su `199fd8d`/sessione D — SHA annotato a push avvenuto, come da regola su branch condiviso):
   - `trino/catalog/postgresql.properties`: catalogo JDBC verso
     `postgres:5432/sales`. Nome file `postgresql.properties`, non
     `postgres.properties`: T0.7 e il piano §4.1 fissano il nome del

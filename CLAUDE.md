@@ -66,6 +66,17 @@ la prima azione della sessione è segnalarlo nel logbook, non ricostruirlo a mem
    piano). I layer di scenografia (Flink, Iceberg, metastore MinIO, K8s) sono
    congelati fino a dopo v0.1.0-beta1: qualunque tentazione va annotata nel logbook
    come proposta, non implementata.
+   **Precisazione (27/08): il vincolo riguarda le modifiche al comportamento del
+   sistema, non gli strumenti di misura.** La regola "la fase N si apre col tag
+   della N−1" esiste per la non-regressione: due release che cambiano lo stesso
+   comportamento in parallelo rendono impossibile attribuire una regressione. Non
+   si applica quindi a: (a) **infrastruttura di test** — costruire fixture, suite
+   EVAL, o irrobustire un test può essere anticipato di fasi, perché il codice di
+   test non è il sistema misurato; (b) **esecuzione di run** — soak, matrici,
+   nightly: misurano, non modificano, e girano nelle ore morte della Z8 a costo
+   cloud zero. Anticipare questi due è incoraggiato e va annotato nel logbook della
+   fase che li ospita, citando la fase che li consumerà. Restano invece sequenziali
+   tutte le modifiche a `stream-agent/`, ai compose e agli script.
 3. **Verità documentale.** Mai aggiungere al README un claim non coperto dal
    comportamento reale. Ogni path citato deve esistere; ogni endpoint in tabella
    deve rispondere.

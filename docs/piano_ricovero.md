@@ -164,6 +164,50 @@ Ogni release: branch `release/vX.Y.Z` da `develop` → fix → CI verde → run 
 
 ---
 
+## 6-bis. Anticipazione e parallelismo (aggiunto 27/08/2026)
+
+Il treno resta sequenziale per le **modifiche di comportamento**, ma tre classi di
+lavoro possono uscire dalla loro fase e comprimere l'elapsed time. La regola che le
+autorizza è in `CLAUDE.md` §3.2.
+
+**A. Strumenti di misura, in anticipo sul codice che misureranno.** Sono codice di
+test: non possono regredire il sistema, e devono comunque esistere prima della fase
+che li usa come gate.
+
+| Lavoro | Fase di origine | Anticipabile a | Perché conviene |
+|---|---|---|---|
+| Suite EVAL: `bench/eval/`, fixture `events_eval.sql`, le 20 domande, asserzioni deterministiche | Fase 3 (#29) | **Fase 1** | È il gate della Fase 3: costruirlo prima significa entrare in Fase 3 con lo strumento pronto invece di fabbricarlo mentre lo si usa |
+| Robustezza di T0.10 (precondizione sulla dimensione della collection o distrattori) | Fase 3 (#40) | **Fase 1** | Finché non è sistemato, T0.10 dà un esito privo di significato **a ogni release**, non solo in Fase 3 |
+| Package RunPod / RP-0 | Fase 5 (#34) | qualunque | Ormai opzionale (la matrice entra nella 3090): si fa se avanza tempo, non blocca |
+
+**B. Ore macchina nelle fasi morte.** Soak e matrici sono tempo di calendario, non
+di sforzo: con il runner `env-w` registrato, `ci-nightly` li porta senza che nessuna
+sessione sia viva, a costo cloud **zero**.
+
+- **Soak "prima" su baseline o v0.0.2** — non previsto originariamente: dà la curva
+  di crescita di Qdrant e del replication slot *prima* dei fix della Fase 3, e rende
+  il confronto post-fix molto più forte di un solo run "dopo".
+- **Matrice EVAL baseline** — stessa logica: i numeri del "prima" si possono
+  raccogliere di notte molto prima della Fase 5.
+- Prerequisito per entrambi: **#42** chiuso (il `down -v` della nightly cancella
+  `ollama_data`), poi `RUN_NIGHTLY` accesa deliberatamente.
+
+**C. Biforcazione del treno dopo la Fase 2 — possibile, non raccomandata oggi.**
+La Fase 4 (ingestion OpenMetadata) non condivide codice con la Fase 3 (agent) e
+dipende solo dai profili compose della Fase 2: in linea di principio i due rami
+possono correre in parallelo e riunirsi prima della Fase 5. **Costo**: due release
+branch in volo significano due set di gate, due logbook, e il rischio di attribuire
+al ramo sbagliato una regressione. Con bus factor 1 e i limiti settimanali attuali
+eccede la capacità: resta un'opzione dichiarata, da riconsiderare solo se compare un
+secondo contributor o se la Fase 3 si allunga oltre le previsioni.
+
+**Sequenza rivista consigliata**: Fase 1 (meccanica) + suite EVAL + #40 in anticipo
+→ Fase 2 → soak e matrice "prima" di notte → Fase 3 con gli strumenti già pronti →
+Fase 4 → Fase 5. L'anticipo di A e B toglie dalla Fase 3 — la più cara — tutto ciò
+che non è il ridisegno vero e proprio.
+
+---
+
 ## 7. Rischi del piano
 
 | Rischio | Mitigazione |

@@ -10,12 +10,86 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 
 ## [Unreleased]
 
-*(Nessuna voce: la prossima release è v0.0.3 — Fase 2, stack onesto sulle risorse.
-In coda: profiles `core`/`lakehouse`/`governance` e `mem_limit` per servizio (**P-5**,
-[#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21)), catalogo Trino e
-configurazione memoria (**P-2**, [#22](https://github.com/danielesalpietro/NORTHSTREAM/issues/22)),
-tier riscritti sui numeri misurati (T-PROF, [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23)),
+*(v0.0.3 — Fase 2, stack onesto sulle risorse. In coda: tier riscritti sui
+numeri misurati (T-PROF, [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23)),
 esclusività dell'host nei run ([#44](https://github.com/danielesalpietro/NORTHSTREAM/issues/44)).)*
+
+### Added
+- `trino/catalog/postgresql.properties` — catalogo JDBC verso il Postgres
+  operativo (`postgres:5432/sales`, utente `demo`). Il nome del file fissa
+  il nome del catalogo: **`postgresql`**, non `postgres` come lo cita di
+  sfuggita `docs/review_tecnica.md` §4.2 — vincolato dal test T0.7 e dalla
+  tabella `docs/piano_ricovero.md` §4.1, entrambi scritti prima di questa
+  sessione e già puntati su `postgresql.public.orders` (**P-2**,
+  [#22](https://github.com/danielesalpietro/NORTHSTREAM/issues/22)).
+  Chiude l'altra metà di P-2 — la prima, la directory `trino/catalog`
+  mancante, era già chiusa dal `.gitkeep` di P-12 in v0.0.2. **Non
+  verificato in questa sessione** (nessun demone Docker): verificabile solo
+  staticamente (`docker compose config`), il flip XFAIL→PASS di T0.7 resta
+  da misurare su ENV-L o nightly ENV-W — `bench/t0/expected/current.json`
+  **non è stato toccato** di proposito, per lo stesso motivo per cui non lo
+  fu per T0.6 finché non fu misurato con modelli veri (v0.0.2).
+- `trino/etc/jvm.config` (montato su `/etc/trino/jvm.config`, sola lettura)
+  — sostituisce l'heap percentuale di default dell'immagine
+  (`-XX:InitialRAMPercentage=80 -XX:MaxRAMPercentage=80`, che senza un
+  `mem_limit` di container dimensiona l'heap sull'80% della RAM **dell'host**,
+  non del laptop) con un heap fisso `-Xms1G -Xmx2G`, nello stile già in uso
+  per Elasticsearch (`-Xmx1g`). **Stima dichiarata, non misura**: 2G è
+  dimensionato per un catalogo singolo con due tabelle operative piccole e
+  nessun carico Iceberg/lakehouse dietro — i numeri veri sul profilo
+  `lakehouse` sono compito di [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23)
+  su ENV-L (P-2/P-5, §4.2-4.3 della review, issue #22).
+- `docker-compose-northstream-ai.yml`, `docker-compose.addon.yml`: profili
+  Compose `core` (nessun tag — sempre attivo, comportamento invariato di
+  default per chi passa i nomi servizio espliciti o nessun `--profile`),
+  `lakehouse` (Flink, MinIO, Trino, e lo schema registry Apicurio — v. nota
+  sotto) e `governance` (l'intero stack OpenMetadata: db, Elasticsearch, il
+  job di migrazione, il server) — **P-5**,
+  [#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21).
+  `docker compose --profile core up` avvia gli 11 servizi della pipeline che
+  funziona davvero (landing page, Kafka, Kafka UI, Postgres, Adminer,
+  Debezium Connect, Ollama, Open WebUI + l'addon: Qdrant, stream-agent,
+  data-generator) invece dei 19-21 di sempre.
+- `mem_limit` per **20 dei 21 servizi** del compose (P-5, issue #21). La
+  maggioranza sono **stime dichiarate**, non misure: derivate dal profilo
+  tipico della tecnologia (JVM di default, app leggere Python/Go/Node) per
+  un carico di laboratorio, non da un run osservato — i numeri misurati
+  arrivano da [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23)
+  su ENV-L. Due sole eccezioni sono ancorate a un valore reale invece che
+  a una sensazione: **Trino** (2560m, margine sopra l'heap fisso di 2G appena
+  introdotto) ed **Elasticsearch** (1536m, margine sopra `-Xmx1g`, l'unica
+  eccezione già vincolata dalla review). **Ollama è l'unico servizio senza
+  `mem_limit`, deliberatamente**: il suo fabbisogno dipende dal modello
+  caricato, cioè dal tier scelto (`examples/*/.env`, da 350m a 32b) — un
+  tetto fisso o farebbe crashare il tier `optimal` o sarebbe inutile per il
+  `minimal`; una decisione per-tier è compito di #23, non di questa sessione.
+  `debezium-connect` ha un margine più ampio (1536m, non 1024m come gli
+  altri singoli servizi JVM) perché è l'unico servizio JVM esercitato sotto
+  carico CDC reale a ogni push da `ci-smoke`: una stima troppo stretta lì
+  fallirebbe come un OOM-kill silenzioso, non come un errore leggibile.
+
+### Fixed
+- `docker-compose-northstream-ai.yml`: `kafka-ui` dipendeva
+  (`depends_on: schema-registry: condition: service_started`) da un servizio
+  ora tag `lakehouse`. Compose rifiuta un servizio sempre-attivo che dipende
+  da un servizio dietro un profilo non richiesto — `--profile core` da solo
+  falliva con "depends on undefined service". `schema-registry` è comunque
+  solo un endpoint opzionale nell'ambiente di `kafka-ui`
+  (`KAFKA_CLUSTERS_0_SCHEMAREGISTRY`), non un requisito di avvio: la
+  dipendenza forte è stata rimossa, l'endpoint resta configurato e kafka-ui
+  mostra semplicemente quel pannello vuoto se Apicurio non gira (issue #21,
+  scoperto durante la validazione statica di questa sessione).
+- `start-addon.sh` / `start-addon.ps1`: senza modifica, l'introduzione dei
+  profili avrebbe cambiato silenziosamente il comportamento di default di
+  questi script da "avvia tutto" (19-21 container) a "avvia solo `core`"
+  (11), perché un `docker compose up` senza `--profile` attiva solo i
+  servizi non taggati. `ci-nightly` chiama `./start-addon.sh --gpu` e si
+  aspetta lo stack pieno per la suite `full` (T0.7 compreso) — esattamente
+  il rischio di regressione silenziosa che CLAUDE.md §5/il piano vietano.
+  Gli script ora passano **tutti e tre i profili di default**
+  (`core,lakehouse,governance`), preservando il comportamento di oggi, e
+  accettano `--profile <nome>[,<nome>...]` (`-Profile` in PowerShell) per
+  chi vuole esplicitamente lo stack snello (issue #21).
 
 ## [v0.0.2] — 2026-08-27
 

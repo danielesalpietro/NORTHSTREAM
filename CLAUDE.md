@@ -238,6 +238,42 @@ primo colpo.
 | Integrazione fiddly con prodotto poco conosciuto | `claude-sonnet-5`, escalation a `claude-opus-5` se si blocca due volte sullo stesso punto | Fase 4 (ingestion OpenMetadata) |
 | Qualunque cosa | mai `claude-fable-5` senza richiesta esplicita dell'owner | consuma budget al doppio della velocità di opus-5, ed è il pool già esaurito |
 
+**Promozione fino al 31/08/2026**: i limiti settimanali sono potenziati del 50%.
+Dopo quella data tornano allo standard, cioè un terzo in meno. Le fasi costose
+(Fase 3 su tutte: ridisegno retrieval + suite EVAL + soak) vanno anticipate
+dentro la finestra potenziata, non rimandate dopo.
+
+### Triage di un sotto-task, in quest'ordine
+
+Prima di assegnare un modello a un pezzo di lavoro, due domande più economiche:
+
+1. **Serve un modello?** Verificare che un tag esista, estrarre un numero da un
+   JSON, controllare l'esito di un workflow, contare i punti di una collection:
+   sono `grep`, `jq`, `git`, `curl`. Costo zero, esito deterministico, nessuna
+   allucinazione possibile. La maggior parte delle verifiche di questo progetto
+   sta qui.
+2. **Può girare in locale?** La Z8 ha una 3090 e i modelli Granite già scaricati.
+   Digestione di log voluminosi, riassunto di output di container, estrazione
+   strutturata: girano lì a costo cloud **zero**, non "ridotto". Vincolo: l'output
+   va verificato meccanicamente (un grep che controlli che errori, exit code e
+   nomi dei test falliti siano sopravvissuti alla compressione).
+3. **Solo allora, quale tier** — secondo la tabella sopra.
+
+**Quando frammentare, e quando no.** Ogni sessione separata ripaga da zero
+l'onboarding (§8: ~29.000 token, che restano in contesto per tutti i suoi turni).
+Un sotto-task merita una sessione propria solo se è **autosufficiente** (briefing
+completo scrivibile in poche righe) e **abbastanza grosso** da ripagare quel costo.
+Sotto quella soglia la delega è una perdita netta, anche su un modello più
+economico.
+
+**Non si delega mai verso il basso**: diagnosi, decisioni di gate, giudizio su
+cosa significhi un esito di test, e qualunque cosa richieda di collegare fatti
+distanti. I tre ritrovamenti migliori della Fase 0 — il `bash -lc` che perde il
+PATH, l'istruzione contraddittoria su `RUN_NIGHTLY`, l'XPASS di T0.10 come
+artefatto della dimensione del corpus — non vengono dal macinare dati, vengono da
+una sessione che teneva insieme il quadro. Frammentarle produce cinque sessioni
+che fanno bene il proprio pezzo mentre nessuno vede il pattern.
+
 **Il driver dominante non è il modello: è la lunghezza della sessione.**
 La sessione Fase 0 ha totalizzato 63 milioni di token di lettura da cache perché
 è rimasta viva attraverso sette cicli di CI, rileggendo l'intera conversazione a

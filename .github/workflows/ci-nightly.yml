@@ -83,4 +83,12 @@ jobs:
           docker compose \
             -f docker-compose-northstream-ai.yml \
             -f docker-compose.addon.yml \
-            down -v
+            down
+          # Reset only the state exercised by the T0 suite (P-10, #42).
+          # ollama_data is deliberately excluded: it holds the Granite
+          # models pulled by this same job, and re-downloading them every
+          # night costs several GB and minutes for no test benefit.
+          docker volume rm -f \
+            wap-northstream-lab_kafka_data \
+            wap-northstream-lab_postgres_data \
+            wap-northstream-lab_qdrant_data

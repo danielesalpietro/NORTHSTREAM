@@ -212,12 +212,13 @@ vuoto. Dettaglio in `docs/runs/20260827-0859-envw-9082a02.md`.
 - **La 3090 di ENV-W è condivisa** con un container estraneo al progetto
   (`C.48865947`, vast.ai): 11,6–22,3 GiB dei 24,5 occupati durante la verifica.
   Variabile non controllata di ogni misura su ENV-W.
-- **Verifica comportamentale reale di #16/#17 su ci-smoke** — il push di
-  sessione B la innesca; se `ci-smoke` risulta rosso, il sospetto principale è
-  la configurazione KRaft dell'immagine Apache (nome env var, path
-  dell'healthcheck `/opt/kafka/bin/kafka-topics.sh`, o `CLUSTER_ID`) — v. le
-  decisioni sopra per cosa è stato dedotto dalla documentazione invece che
-  osservato.
+- **`ci-smoke` sul push di B è rosso, ma non per la KRaft**: run 33057147479,
+  `{"PASS": 3, "FAIL": 2, "XFAIL": 2}`. **T0.6 è PASS** — il progression test della
+  release è flippato, P-1 chiuso nel comportamento. I due FAIL (T0.2, T0.3) sono
+  **nell'harness**: `t0.02` e `t0.03` invocano `kafka-topics.sh` /
+  `kafka-console-consumer.sh` per nome nudo, e in `apache/kafka:4.3.1` i binari stanno
+  in `/opt/kafka/bin/` e non nel PATH (verificato con `docker run`). Fix di due righe,
+  **spetta a sessione B**; v. l'addendum in fondo alla entry ENV-W del 27/08.
 - **La suite `full` sul codice di B** (`7364349` o successivo) resta da eseguire su
   ENV-W: il run del 27/08 misura `9082a02` e la sua riga T0.6 XFAIL **non** è il
   verdetto sul progression test della release.
@@ -581,6 +582,48 @@ Apache, v. "Aperto").
   contro `7364349` (o successivo) per misurare **T0.6**, il progression test dichiarato
   di v0.0.2, ora che #17+#16 sono sul branch — e verificare che il binding su
   `127.0.0.1` (#18) non abbia rotto i PASS T0.2/T0.3.
+
+### Addendum (stessa sessione, 09:25Z) — diagnosi del rosso di `ci-smoke` sul push di B
+
+Controllato l'esito della CI prima di chiudere il turno. `ci-smoke`
+[33057147479](https://github.com/danielesalpietro/NORTHSTREAM/actions/runs/33057147479)
+sul push di sessione B è **rosso**: `{"PASS": 3, "FAIL": 2, "XFAIL": 2}`.
+
+**La notizia buona, e va detta per prima**: **T0.6 → PASS**
+(`host client obtained usable broker metadata from localhost:29092`). Il progression
+test dichiarato di v0.0.2 è **flippato**: P-1 è chiuso nel comportamento, non solo nel
+codice.
+
+**I due FAIL sono nell'harness, non nel broker**:
+
+```
+T0.2  FAIL  (243s) not reachable within 240s: kafka
+T0.3  FAIL  (5s)   sentinel 77.31 not observed on northstream.public.sensor_readings within 30s
+```
+
+Causa individuata e **verificata per misura**:
+
+```
+$ docker run --rm --entrypoint sh apache/kafka:4.3.1 -c 'command -v kafka-topics.sh; ls /opt/kafka/bin/kafka-topics.sh; echo $PATH'
+NON in PATH
+/opt/kafka/bin/kafka-topics.sh
+PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+```
+
+`bench/t0/tests/t0.02_stack_health.sh:19` invoca `kafka-topics.sh` e
+`t0.03_cdc_sentinel.sh:28` invoca `kafka-console-consumer.sh` **per nome nudo**, contando
+sul PATH. Nell'immagine Bitnami i binari erano nel PATH; in `apache/kafka:4.3.1` stanno
+in `/opt/kafka/bin/` e **non** ci sono. Il broker sta benissimo — lo dimostra proprio
+T0.6, che lo interroga dall'host e passa, e l'healthcheck del compose, che usa il path
+assoluto ed è verde.
+
+È la stessa lezione della Fase 0 sul `bash -lc` che perde il PATH, ripetuta da un altro
+lato: **un cambio d'immagine sposta i binari, e i test che li chiamano per nome nudo
+falliscono mentendo sul soggetto** — accusano il broker mentre il difetto è nella sonda.
+
+**Non corretto qui**: questa sessione non committa codice (`CLAUDE.md` §2, riga sessioni).
+Il fix è di sessione B, due righe: usare `/opt/kafka/bin/<comando>` con fallback al nome
+nudo, come già fa l'healthcheck.
 
 ## Decisioni richieste all'owner
 

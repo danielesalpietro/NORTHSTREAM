@@ -88,8 +88,6 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
   aggiornato con l'endpoint `localhost:29092` a fine release. Ora legge anche
   `KAFKA_ADVERTISED_LISTENERS` ([#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16),
   [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)).
-
-### Fixed
 - Bit di esecuzione impostato sui tre script del Quick Start (`start-addon.sh`,
   `register-connector.sh`, `demo-compare.sh`), committati `100644` invece di
   `100755`: su un clone pulito il primo comando del Quick Start falliva con

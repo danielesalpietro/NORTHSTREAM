@@ -308,3 +308,72 @@ esecuzione) — Sessione A, fuori scope Fase 1
   la finestra dà anche la prima misura "prima" citata in piano §6-bis.
 - **Decisioni richieste all'owner**: nessuna — il branch e lo scope erano già
   decisi dalla supervisione nel compito assegnato.
+
+---
+
+## 2026-08-27 (quinta entry) — sessione remota (cloud) — Sessione A, fix urgente
+soak, fuori scope Fase 1 (stessa collocazione della quarta entry)
+
+- **Obiettivo**: correggere un difetto misurato dalla supervisione su ENV-W —
+  `bench/soak/lib/sample.py` leggeva `active` dello slot di replica sempre
+  `false`, perché il confronto era contro `'t'` mentre Postgres, concatenando
+  un booleano con `||`, lo stringifica `'true'`/`'false'`. Una costante
+  travestita da misura: 24 h archiviate avrebbero raccontato una pipeline
+  scollegata, falso.
+- **Fatto** (commit `2b4f4ad` su `feature/soak-harness`):
+  - **Fix alla radice**: la query ora forza l'encoding con un `CASE WHEN
+    active THEN 't' WHEN NOT active THEN 'f' ELSE 'u' END`, invece di
+    fidarsi di come Postgres stringifica implicitamente un booleano
+    concatenato (dipendente da versione/contesto, non garantito).
+  - **Difesa in profondità**: il parser accetta solo `'t'`/`'f'`; qualunque
+    altro valore diventa `active: None` con un warning esplicito — non può
+    più collassare silenziosamente su `False`.
+  - **Riletti gli altri campi derivati** (richiesto esplicitamente dal
+    compito): righe non riconosciute della query postgres, righe non
+    parsabili di `docker stats`, container visti da `docker ps` ma assenti
+    da `docker stats`, righe `nvidia-smi` non parsabili — tutti ora
+    producono un warning/error invece di sparire in silenzio. Gli altri campi
+    derivati (`retained_bytes`, i conteggi tabella) erano già corretti:
+    usano già `.isdigit()` con fallback a `None`, non a `0`.
+  - **Auto-verifica minima**: ogni warning/error di ogni sottosistema è ora
+    anche stampato su stderr per ogni campione (non solo il primo — più
+    semplice e strettamente più sicuro), che `run.sh` già redirige in
+    `soak.err.log`: un dato anomalo è visibile entro un intervallo, non dopo
+    24 ore.
+- **Decisioni prese**: nessuna scelta libera — il compito chiedeva
+  esplicitamente "niente rifacimenti, niente funzionalità in più", quindi il
+  fix è il minimo che chiude il difetto segnalato più l'audit richiesto degli
+  altri campi. Un'unica scelta di merito: **fix alla radice (query SQL)
+  oltre che nel parser**, non solo nel parser — l'alternativa scartata era
+  correggere solo il confronto Python contro `'true'`, ma quello resta fragile
+  a un futuro cambio di comportamento di Postgres/psql; fissare l'encoding
+  lato query lo rende deterministico e testabile.
+- **Test eseguiti**:
+  - `ruff check bench/soak/` → pulito. `python3 -m py_compile` → sintassi
+    valida su entrambi i file toccati.
+  - **Test mirato del fix** (mock di `run()`, 4 casi): `active` `'t'` → `True`;
+    `'f'` → `False`; un valore inatteso `'true'` (il difetto originale) →
+    `None` + warning, **non** `False`; una riga non riconosciuta → warning,
+    non scartata in silenzio. Tutti e quattro verificati con `assert` diretti
+    sull'output di `sample_postgres`.
+  - **Prova a secco end-to-end** (10 s, stack spento, questa sandbox senza
+    Docker): 3 campioni, ogni sottosistema degradato con `error` esplicito,
+    e — a differenza di prima — **ogni degradazione ora compare in
+    `soak.err.log`** per ciascun campione, non solo silenziosamente nel
+    JSON. `verdict.py` gira senza eccezioni sui campioni con `_warnings`
+    nel dizionario `containers` (bug collaterale trovato e corretto in
+    `verdict.py`: iterava su `containers.items()` inclusa la chiave
+    `_warnings`, che non ha `.get()` — ora salta le chiavi con prefisso `_`).
+  - **Verifica sullo stack reale (ENV-W) non eseguita da questa sessione**:
+    nessun accesso Docker qui. Resta alla sessione ENV-W confermare che
+    `active` legga correttamente lo stato vero del connettore.
+- **Costo della sessione**: `claude-sonnet-5`. Non ri-misurato con
+  `get_session` per questa singola entry (richiesta esplicita di velocità
+  nel compito — "urgente e piccolo"); cumulativo dall'inizio sessione nella
+  prossima entry di chiusura fase.
+- **Non funziona / sospeso**: verifica reale su ENV-W con connettore attivo,
+  da fare al lancio del soak.
+- **Prossimo passo per la sessione successiva**: sulla Z8, `git pull` su
+  `feature/soak-harness` (ora a `2b4f4ad`) e ripetere la prova a secco di 10
+  minuti prima del soak pieno — v. comando nella quarta entry, invariato.
+- **Decisioni richieste all'owner**: nessuna.

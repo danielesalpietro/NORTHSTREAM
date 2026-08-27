@@ -8,13 +8,250 @@ Regola (da `CLAUDE.md` §4): ogni commit che cambia comportamento aggiunge una r
 sotto `[Unreleased]` citando il finding o l'obiettivo che chiude; al rilascio la
 sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 
-## [Unreleased]
+## [v0.0.2] — 2026-08-27
 
-*(Nessuna voce: la prossima release è v0.0.2 — Fase 1, raggiungibilità e
-riproducibilità. Finding già confermati e in coda: **P-9** script del Quick Start
-non eseguibili su clone pulito ([#41](https://github.com/danielesalpietro/NORTHSTREAM/issues/41)),
-**P-10** teardown di `ci-nightly` che cancella `ollama_data`
-([#42](https://github.com/danielesalpietro/NORTHSTREAM/issues/42)).)*
+**Che cosa rilascia questa versione**: raggiungibilità e riproducibilità dello
+stack (obiettivo O3 del piano). Kafka è raggiungibile dall'host come il README
+promette da sempre, senza più il divario fra racconto e comportamento aperto
+da P-1 in v0.0.1; le immagini sono pinnate a versione+digest invece di tag
+mobili; tutte le porte sono legate a `127.0.0.1` invece che a `0.0.0.0`; un
+preflight fallisce con causa/sintomo/rimedio invece di lasciar morire un
+container in silenzio. Il lavoro ha anche scoperto e chiuso, nello stesso giro
+di verifica su hardware reale, una classe di difetti che nessuna quantità di
+CI verde poteva vedere: P-11/P-12/P-13, lo stesso meccanismo — Docker che gira
+come root e lascia in giro stato che l'utente non può toccare — visto da tre
+lati (un volume, una directory su un workspace CI, la stessa directory dentro
+un clone esistente).
+
+**Progression test dichiarato**: **T0.6** (client host ottiene metadata
+Kafka utilizzabili) da XFAIL a **PASS** — misurato **con modelli veri**, non
+solo in CI con mock-ollama: due nightly reali consecutive su ENV-W contro
+`6b377a3` danno T0.6 PASS in entrambe (`broker 1 at localhost:29092`).
+
+**Run di riferimento**: [`docs/runs/20260827-1148-envw-6b377a3.md`](docs/runs/20260827-1148-envw-6b377a3.md)
+— due nightly consecutive su ENV-W in stato **esclusivo**, suite `full` con
+modelli reali. T0.6 PASS in entrambe; T0.2/T0.3 PASS in entrambe (nessuna
+regressione dal cambio immagine di #17/#18); `actions/checkout` verde in
+entrambe (P-12 dimostrato sul workspace CI). Il metro resta
+[`docs/runs/20260826-2053-envw-5eb456a-baseline.md`](docs/runs/20260826-2053-envw-5eb456a-baseline.md)
+(baseline, 5 PASS + 6 XFAIL + 1 XPASS): tutti e cinque i PASS di riferimento
+restano PASS in questa release, nessuna regressione.
+
+**Qualificazione da riportare, non da nascondere**: nelle due nightly di
+riferimento, T0.4 e T0.5 concludono `failure` **a stack freddo**, con tre
+insiemi diversi di FAIL su tre run distinti — non è una regressione di questa
+release (è la finestra cieca di A-8, [#39](https://github.com/danielesalpietro/NORTHSTREAM/issues/39)),
+ed **entrambi passano 2 volte su 2 a stack caldo** (attesa di 6 minuti oltre
+la finestra A-8). Ma "non è una regressione" e "la nightly è una guardia di
+non-regressione affidabile" sono due affermazioni diverse, e solo la prima è
+dimostrata: finché non esiste un *warm-up gate*
+([#47](https://github.com/danielesalpietro/NORTHSTREAM/issues/47)), un FAIL
+di T0.4/T0.5 sulla nightly a freddo non è interpretabile da solo.
+
+**Finding chiusi in questa release**. Verificati su ENV-W con hardware (e,
+dove rilevante, modelli) reali, non solo in CI con mock-ollama o
+staticamente: **P-1** (#16), **P-3/P-4** (#17), **P-9** (#41), **P-10** (#42),
+**P-11** (#45), **P-12** (#46), **P-13** (#48). Verificati solo staticamente
+in questa sessione (nessun demone Docker) e non su ENV-W — **P-6** (#19: la
+Z8 ha già `vm.max_map_count` preconfigurato, quindi non riproduce il difetto
+che il preflight rileva, coerentemente con quanto la review aveva già
+osservato) e **P-7** (#18: verificato via `docker compose config`, non con un
+tentativo di connessione dalla LAN).
+
+### ⚠ Breaking (lab esistenti) — leggere PRIMA di `git pull`
+
+Se stai aggiornando un checkout NORTHSTREAM che ha già fatto girare lo stack
+(non un `git clone` nuovo), esegui **questi comandi, in quest'ordine, prima
+di `git pull`** — farlo dopo, o non farlo, lascia l'albero a metà o il
+broker in crash-loop:
+
+```bash
+# 1. Rimuovi la directory che Docker ha creato come root (P-13): se esiste,
+#    blocca 'git pull'/'git checkout' con "Permission denied" a metà operazione.
+sudo rm -rf trino/catalog trino
+
+# 2. SOLO ORA, git pull:
+git pull
+
+# 3. Rimuovi il volume Kafka della vecchia immagine (P-11): dato locale
+#    effimero, nessuna perdita — CDC lo ricostruisce dal primo avvio.
+docker volume rm wap-northstream-lab_kafka_data 2>/dev/null || true
+# oppure, per un reset completo dello stack:
+docker compose down -v
+```
+
+**Perché**: `bitnamilegacy/kafka:3.7.1` → `apache/kafka:4.3.1` (#17) cambia
+anche l'utente del container Kafka, da `uid=1001 gid=0(root)` a
+`uid=1000(appuser) gid=1000`. Un volume `kafka_data` popolato dalla vecchia
+immagine resta `0:0` modo `775` — scrivibile dal gruppo root, di cui il
+vecchio broker faceva parte e il nuovo no — e il broker va in crash-loop con
+`AccessDeniedException`, un errore che non nomina né i permessi né il cambio
+d'immagine (**P-11**, [#45](https://github.com/danielesalpietro/NORTHSTREAM/issues/45)).
+`trino/catalog` non esiste nel repository ed è sempre stata creata da
+Docker al primo `up`; quando la crea come `root:root` (bind-mount di una
+directory assente), l'utente del checkout non può più toccarla — su un
+workspace CI ripulito a ogni run questo bloccava solo la nightly successiva
+alla prima (**P-12**, [#46](https://github.com/danielesalpietro/NORTHSTREAM/issues/46));
+sullo stesso clone di chi usa il lab da tempo, blocca direttamente `git
+pull` (**P-13**, [#48](https://github.com/danielesalpietro/NORTHSTREAM/issues/48)).
+
+**P-11, P-12 e P-13 sono lo stesso difetto visto da tre lati**: Docker gira
+come root e lascia in giro stato (un volume, una directory, la stessa
+directory dentro un clone) che l'utente non può toccare — e nessuno dei tre
+è visibile alla CI, perché ogni run parte da zero ed esercita sistematicamente
+l'unico caso che funziona. `preflight.sh`/`.ps1` (#19) ora rileva **entrambe**
+le condizioni prima dell'avvio (volume Kafka incompatibile, directory non
+scrivibili nell'albero del repository) e fallisce con causa, sintomo e
+rimedio — ma non sostituisce questi comandi per un clone già bloccato: non
+può correre finché `git pull` non ha già portato la sua stessa versione
+aggiornata sulla macchina.
+
+### Changed
+- `docker-compose-northstream-ai.yml`: `bitnamilegacy/kafka:3.7.1` sostituito con
+  `apache/kafka:4.3.1`, pinnato a versione+digest (P-3, P-4, O3.2,
+  [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)). Le env
+  `KAFKA_CFG_*` di Bitnami diventano `KAFKA_*` nel formato dell'immagine
+  ufficiale Apache. **Verificato**: T0.2/T0.3 (consumo CDC interno) PASS in
+  due nightly reali consecutive su ENV-W —
+  [`docs/runs/20260827-1148-envw-6b377a3.md`](docs/runs/20260827-1148-envw-6b377a3.md)
+  — nessuna regressione dal cambio immagine.
+- `docker-compose-northstream-ai.yml` e `docker-compose.addon.yml`: le altre
+  sette immagini oggi su `:latest`/tag mobili pinnate a versione+digest —
+  `kafka-ui` (`v0.7.2`), `adminer` (`5.5.1`), `minio` (`RELEASE.2025-09-07T16-13-09Z`),
+  `mc` (`RELEASE.2025-08-13T08-35-41Z`), `qdrant` (`v1.19.0`), `ollama` (`0.33.1`),
+  `open-webui` (`v0.11.1`) — digest risolti via API del registry (token anonimo
+  Docker Hub / GHCR), nessun demone Docker disponibile in questa sessione
+  (P-4, O3.2, [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)).
+  **Verificato**: nuovo test **T-REPRO** (v. sotto), PASS in ogni run statico.
+- `docker-compose-northstream-ai.yml`: doppio listener Kafka — `INTERNAL`
+  (`kafka:9092`, usato dagli altri servizi del compose) ed `EXTERNAL`
+  (`localhost:29092`, pubblicato per un client sull'host), con
+  `advertised.listeners` coerente per ciascuno. Prima era un solo listener
+  `PLAINTEXT` annunciato come `kafka:9092` a tutti, compreso l'host — la causa
+  esatta di P-1 (T0.6). Progression test dichiarato della release: **T0.6
+  XFAIL → PASS** (P-1, O3.1, [#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16)).
+  **Verificato con modelli veri**, non solo mock-ollama: T0.6 PASS in due
+  nightly reali consecutive su ENV-W —
+  [`docs/runs/20260827-1148-envw-6b377a3.md`](docs/runs/20260827-1148-envw-6b377a3.md).
+- `bench/t0/run.sh`: **T0.6 promosso nella suite `ci`** (oltre a `core`/`full`),
+  così il progression test della release gira a ogni push via `ci-smoke`
+  invece di aspettare la nightly su ENV-W — requisito esplicito del piano
+  per questa release ([#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16)).
+- `bench/t0/lib/common.sh`: default di `NS_KAFKA_HOST_BOOTSTRAP` spostato da
+  `localhost:9092` a `localhost:29092`, coerente col nuovo listener esterno
+  ([#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16)).
+- `bench/t0/`: nuovo test statico **T-REPRO** (`t_repro_digest_pin.sh`) —
+  verifica che le 8 immagini di P-3/P-4 restino pinnate a versione+digest;
+  aggiunto alle suite `static`, `core` e `full`. `run.sh` ora risolve anche
+  id di test non numerici (`test_script()`), non solo `T0.N`
+  ([#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)).
+- `bench/t0/expected/current.json`: `T0.6` da `XFAIL` a `PASS`, `T-REPRO`
+  aggiunto come `PASS`; `expected/baseline.json` **non toccato** (è il
+  contratto congelato della baseline, non si piega ai risultati di release
+  successive — CLAUDE.md §3.8/decisioni Fase 0).
+
+- `docker-compose-northstream-ai.yml`, `docker-compose.addon.yml`,
+  `bench/ci/mock-ollama.yml`: tutti i port mapping passano da
+  `porta:porta` (pubblicato su `0.0.0.0`) a `127.0.0.1:porta:porta` — 17
+  porte in totale, comprese quelle appena introdotte da #16 e #17.
+  Rende vero il claim "local testing only" del README (P-7,
+  [#18](https://github.com/danielesalpietro/NORTHSTREAM/issues/18)).
+  Verificato programmaticamente su `docker compose config`: ogni porta
+  pubblicata ha `host_ip: 127.0.0.1`; `localhost` risolve comunque a
+  `127.0.0.1` sull'host, quindi T0.6 (`localhost:29092`) e `ci-smoke`
+  (che gira `curl` sullo stesso host dei container) restano coerenti.
+
+### Added
+- `preflight.sh` / `preflight.ps1`: script di preflight (P-6) — verifica
+  `vm.max_map_count ≥ 262144` (prima causa concreta del bootstrap loop di
+  Elasticsearch/OpenMetadata su Linux nativo, dove Docker Desktop/WSL2 non lo
+  preimposta), RAM e spazio disco disponibili contro le soglie del tier
+  scelto (`--tier minimal|recommended|optimal`, default `minimal`, soglie
+  allineate alla tabella hardware del README), driver NVIDIA con `--gpu`.
+  Fallisce con un messaggio azionabile invece di lasciar morire un
+  container in silenzio. **Passo esplicito, non invocato automaticamente**
+  da `start-addon.sh`/`.ps1` in questa release — motivato nel logbook di
+  fase ([#19](https://github.com/danielesalpietro/NORTHSTREAM/issues/19)).
+  Verificato in questa sessione (nessun demone Docker, ma bash sì): su
+  questo host sandbox rileva correttamente `vm.max_map_count=65530` (sotto
+  soglia), 15 GiB di RAM e 29 GiB liberi (entrambi sotto la soglia
+  `minimal`), ed esce con `FAIL` e i tre rimedi; `preflight.ps1` non è
+  eseguibile in questa sessione (nessun PowerShell) — scritto per
+  simmetria con `start-addon.ps1`, da collaudare su ENV-L/host Windows.
+- `preflight.sh` / `preflight.ps1`: nuovo controllo per **P-11** — rileva un
+  volume `kafka_data` preesistente (via le label `com.docker.compose.*` che
+  compose assegna, non un nome hardcoded) e verifica che sia scrivibile
+  dall'utente `1000:1000` di `apache/kafka` con un container `busybox`
+  usa-e-getta; fallisce con il comando di rimedio (`docker volume rm ...`)
+  se non lo è, distinguendo un vero permission-denied da un errore
+  generico (docker non raggiungibile, pull fallito) che diventa un
+  `WARN`, non un falso positivo
+  ([#45](https://github.com/danielesalpietro/NORTHSTREAM/issues/45)).
+  **Non verificabile in CI per costruzione** (`ci-smoke`/`ci-nightly`
+  partono sempre da un volume inesistente, l'unico caso che funziona).
+  **Verificato su ENV-W sui tre stati reali**: volume assente → `OK`,
+  exit 0; volume ricreato con la vecchia proprietà (`0:0` modo 775, file
+  `1001:0`) → `FAIL` con causa/sintomo/rimedio, exit 1; volume creato
+  dalla nuova immagine → `OK`, exit 0. Il preflight **discrimina**, non
+  fallisce a prescindere.
+- `trino/catalog/.gitkeep` — la directory non esisteva nel repository
+  (metà del finding P-2): Docker la creava `root:root` al primo `up` sul
+  runner self-hosted, e alla nightly successiva `actions/checkout` moriva
+  con `EACCES` nel ripulire il workspace (**P-12**,
+  [#46](https://github.com/danielesalpietro/NORTHSTREAM/issues/46)). Con
+  la directory già presente in git, Docker non la ricrea come root.
+  **Verificato su ENV-W**: due nightly consecutive sullo stesso workspace,
+  `actions/checkout` verde in entrambe —
+  [`docs/runs/20260827-1148-envw-6b377a3.md`](docs/runs/20260827-1148-envw-6b377a3.md).
+- `preflight.sh` / `preflight.ps1`: nuovo controllo per **P-13** — cerca
+  directory non scrivibili dall'utente corrente nell'albero del
+  repository (`find -type d -not -writable` / un test di scrittura reale
+  in PowerShell), non solo il volume Docker di P-11: stesso meccanismo,
+  una directory come `trino/catalog` creata da un container che gira come
+  root invece di un volume, ma con lo stesso effetto — bloccare `git
+  pull`/`git checkout` con `Permission denied` a metà operazione
+  ([#48](https://github.com/danielesalpietro/NORTHSTREAM/issues/48)).
+  **Non verificabile in CI per costruzione, come P-11.** **Verificato su
+  ENV-W** con lo stesso protocollo a tre stati di P-11, **più una
+  controprova sull'istanza reale**: il preflight è stato puntato sul
+  clone reale che quella mattina non riusciva più a fare `git pull`, e ha
+  rilevato entrambe le directory compromesse — il controllo cattura il
+  caso vero, non solo un'imitazione sintetica.
+
+### Fixed
+- `bench/t0/lib/doc_truth.py`: `kafka_advertises_host()` cercava solo la
+  chiave Bitnami `KAFKA_CFG_ADVERTISED_LISTENERS`. Dopo la migrazione a
+  `apache/kafka` (#17) quella chiave non esiste più nel compose: il linter
+  T0.12 sarebbe rimasto **silenziosamente cieco** al comportamento reale del
+  broker (falso negativo su P-1) nel momento esatto in cui il README verrà
+  aggiornato con l'endpoint `localhost:29092` a fine release. Ora legge anche
+  `KAFKA_ADVERTISED_LISTENERS` ([#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16),
+  [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)).
+- Bit di esecuzione impostato sui tre script del Quick Start (`start-addon.sh`,
+  `register-connector.sh`, `demo-compare.sh`), committati `100644` invece di
+  `100755`: su un clone pulito il primo comando del Quick Start falliva con
+  `Permission denied` (exit 126) (P-9, [#41](https://github.com/danielesalpietro/NORTHSTREAM/issues/41)).
+- Teardown di `ci-nightly` non usa più `down -v`: rimuove esplicitamente solo i
+  volumi di stato esercitati dalla suite T0 (Kafka, Postgres, Qdrant),
+  preservando `ollama_data` — evita di ricancellare i modelli Granite a ogni
+  notte (P-10, [#42](https://github.com/danielesalpietro/NORTHSTREAM/issues/42)).
+- `bench/t0/tests/t0.02_stack_health.sh` e `t0.03_cdc_sentinel.sh` chiamavano
+  `kafka-topics.sh`/`kafka-console-consumer.sh` per nome nudo, contando sul
+  PATH. Nell'immagine Bitnami quei binari erano in PATH; in `apache/kafka:4.3.1`
+  (#17) stanno in `/opt/kafka/bin/` e non lo sono — verificato dalla sessione
+  ENV-W con `docker run --entrypoint sh apache/kafka:4.3.1 -c 'command -v
+  kafka-topics.sh; ls /opt/kafka/bin/kafka-topics.sh'`. **Difetto della sonda,
+  non del broker**: T0.6 (client host) e l'healthcheck del compose, che già
+  usa il path assoluto, restavano verdi durante il run rosso di `ci-smoke`
+  (33057147479). Entrambi i test ora provano il path assoluto per primo, con
+  fallback al nome nudo — lo stesso pattern già in uso nell'healthcheck —
+  così l'harness resta valido anche su un'immagine che li mettesse in PATH.
+  Corregge la regressione di T0.2/T0.3 introdotta da #17
+  ([#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16),
+  [#17](https://github.com/danielesalpietro/NORTHSTREAM/issues/17)).
+  **Verificato**: `ci-smoke` tornato verde sul push successivo, e T0.2/T0.3
+  confermati PASS con modelli veri in due nightly reali su ENV-W —
+  [`docs/runs/20260827-1148-envw-6b377a3.md`](docs/runs/20260827-1148-envw-6b377a3.md).
 
 ## [v0.0.1] — 2026-08-26
 

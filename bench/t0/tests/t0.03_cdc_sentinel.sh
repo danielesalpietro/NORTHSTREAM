@@ -24,8 +24,12 @@ consume_log="$(mktemp)"
 # The consumer is bounded by wall clock, not by --timeout-ms: with the data
 # generator running there is always another message within a few seconds, so
 # an idle timeout would never fire and the test would hang.
+#
+# Absolute path first, bare name as fallback: apache/kafka (#17) ships
+# kafka-console-consumer.sh under /opt/kafka/bin/ but does not put it on
+# PATH, unlike the bitnamilegacy image this test was written against.
 docker exec "$NS_C_KAFKA" sh -c \
-    "timeout ${NS_CDC_TIMEOUT} kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic ${topic} 2>>/tmp/t0.3-consumer.err" \
+    "cmd=kafka-console-consumer.sh; [ -x /opt/kafka/bin/kafka-console-consumer.sh ] && cmd=/opt/kafka/bin/kafka-console-consumer.sh; timeout ${NS_CDC_TIMEOUT} \"\$cmd\" --bootstrap-server kafka:9092 --topic ${topic} 2>>/tmp/t0.3-consumer.err" \
     >"$consume_log" &
 consumer_pid=$!
 sleep 5

@@ -51,7 +51,10 @@ NS_C_TRINO="${NS_C_TRINO:-northstream-trino}"
 NS_AGENT_URL="${NS_AGENT_URL:-http://localhost:8500}"
 NS_QDRANT_URL="${NS_QDRANT_URL:-http://localhost:6333}"
 NS_CONNECT_URL="${NS_CONNECT_URL:-http://localhost:8083}"
-NS_KAFKA_HOST_BOOTSTRAP="${NS_KAFKA_HOST_BOOTSTRAP:-localhost:9092}"
+# Port 29092 is the EXTERNAL listener added by the dual-listener setup
+# (finding P-1, issue #16): 9092 is now INTERNAL-only, advertised as
+# kafka:9092 and unusable from the host on purpose.
+NS_KAFKA_HOST_BOOTSTRAP="${NS_KAFKA_HOST_BOOTSTRAP:-localhost:29092}"
 
 # Timeouts (seconds). Overridable so the same test can run fast in CI and
 # realistically on a workstation.

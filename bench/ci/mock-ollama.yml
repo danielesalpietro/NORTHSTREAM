@@ -19,5 +19,5 @@ services:
     container_name: northstream-ollama
     restart: unless-stopped
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes: []

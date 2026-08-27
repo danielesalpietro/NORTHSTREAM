@@ -847,3 +847,71 @@ nudo, come già fa l'healthcheck.
 - **Decisioni richieste all'owner**: nessuna nuova oltre a quella già in sospeso da
   P-12/#46 — sbloccare `trino/catalog` root-owned sul workspace ENV-W (`sudo rmdir`), che
   nessuna sessione agente può fare da sola.
+
+## 2026-08-27 (terza entry ENV-W) — ENV-W (Z8, finestra esclusiva) — host di verifica
+
+- **Obiettivo della sessione**: chiudere la misura di v0.0.2 (suite `full` contro l'head,
+  T0.6 con modelli veri), verificare P-11 (#45) e P-12 (#46), e fare la prova a secco del
+  soak prima di impegnare una finestra da 24 ore.
+- **Fatto**:
+  - Due nightly consecutive su `6b377a3` in **stato esclusivo** (`nvidia-smi` 9 MiB, zero
+    processi di calcolo): report `docs/runs/20260827-1148-envw-6b377a3.md`, grezzi
+    archiviati per entrambe (29/29 checksum OK ciascuna).
+  - Verifica di P-11 sui **tre stati** del volume `kafka_data`; verifica di P-12 con due
+    checkout consecutivi verdi.
+  - Prova a secco del soak: `docs/runs/20260827-1224-envw-0a8d633.md`.
+- **Decisioni prese**:
+  - **T0.4 e T0.5 non sono un blocco di release, ma il gate deve dichiarare *come*.**
+    Verdi «a stack caldo», non in assoluto: a freddo l'esito è casuale. *Alternativa
+    scartata*: dichiararli verdi senza qualificazione — nasconderebbe che la nightly, così
+    com'è, non è una guardia di non-regressione affidabile.
+  - **Il soak da 24 ore non parte finché `sample.py` non è corretto.** Il campo `active`
+    dello slot di replica è `False` in ogni campione per un difetto di parsing, non per lo
+    stato reale. *Alternativa scartata*: partire comunque e correggere il dato a
+    posteriori — il campo è la fonte diretta della verifica (b) del piano §4.3, e un
+    archivio che afferma il falso in ogni riga non è correggibile a posteriori.
+  - **Il volume di prova per P-11 è stato creato con le label compose**, non solo col nome
+    giusto: il check cerca per label, quindi un volume senza label avrebbe prodotto un `OK`
+    che non controllava nulla — un test verde che non testa.
+- **Test eseguiti**:
+  - `gh workflow run ci-nightly.yml … -f suite=full` ×2 → run 33068899387 e 33069809809.
+    **T0.6 PASS in entrambi** (4 s e 3 s) **con modelli veri**, probe `kcat` host-network:
+    `broker 1 at localhost:29092 (controller)`. **T0.2 e T0.3 PASS in entrambi** — nessuna
+    regressione dal cambio immagine di #17. `actions/checkout` verde in entrambi → **P-12
+    dimostrato** (#46). Conteggi: `{"PASS":7,"FAIL":1,"XFAIL":4,"XPASS":1}` e
+    `{"PASS":6,"FAIL":2,"XFAIL":4,"XPASS":1}`.
+  - Riesecuzione di T0.4+T0.5 a stack caldo (attesa deliberata di 6 min oltre la finestra
+    A-8): **PASS ×2 giri entrambi**. `/health` passa da `buffered_events: 0` a 85 s
+    dall'avvio a `38` dopo 6 minuti.
+  - **P-11 (#45)**: preflight su volume assente → `OK … nothing to migrate`, exit 0; su
+    volume vecchio ricreato (`0:0` modo 775, file `1001:0`) → **`FAIL`** con causa,
+    sintomo e comando di rimedio, **exit 1**; su volume creato dall'immagine nuova →
+    `OK … writable by uid 1000`, exit 0.
+  - **Soak, prova a secco** (`--interval 15 --duration 600`): 35 campioni, `soak.err.log`
+    vuoto, file leggibile a run in corso, `verdict.py` produce i 4 check + il blocco
+    esclusività. Eventi persi sulla finestra: **zero** — delta Qdrant +69 contro delta
+    righe DB +69 sui primi 13 campioni, divario assoluto costante a 94.
+- **Costo della sessione**: **non misurabile** — sessione bridge, `usage` non esposto.
+- **Non funziona / sospeso**:
+  - **`bench/soak/lib/sample.py:96`**: `"active": active == "t"` contro un valore che
+    Postgres rende `true` → campo costante `False`. Fix di una riga, **sessione A**.
+    Blocca T-SOAK-24h.
+  - **`event_loss_db_vs_qdrant` senza tolleranza**: `WARN` per 1 evento su 195, che è
+    disallineamento di campionamento. Su 24 ore sarebbe un `WARN` permanente e privo di
+    significato. **Sessione A**.
+  - **Il fix di P-12 non copre l'aggiornamento di un clone esistente**: `git pull` su un
+    clone con `trino/catalog` root-owned fallisce con `Permission denied` e lascia
+    l'albero a metà (misurato su questo host). Stessa forma di P-11: va nella nota di
+    migrazione di #45.
+  - **Warm-up gate della nightly**: ancora da aprire. Tre nightly a freddo hanno prodotto
+    tre insiemi diversi di FAIL fra T0.4 e T0.5.
+- **Prossimo passo per la sessione successiva**: corretto `sample.py`, lanciare
+  T-SOAK-24h su finestra estesa; per la release, #20 (gate, CHANGELOG, README, tag) con
+  T0.6 ora misurato.
+
+## Decisioni richieste all'owner (terza entry ENV-W)
+
+1. **Estensione della finestra** oltre le 22:00Z per T-SOAK-24h, subordinata al fix di
+   `sample.py`.
+2. **Formulazione del gate di release** su T0.4/T0.5: verdi «a stack caldo» è una
+   qualificazione, non un PASS pieno.

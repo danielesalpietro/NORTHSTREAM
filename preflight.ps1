@@ -6,10 +6,33 @@
 # start-addon.ps1. See CHANGELOG.md / the Fase 1 logbook for why.
 #
 # Usage: .\preflight.ps1 [-Tier minimal|recommended|optimal] [-Gpu]
+#                         [-RequireVramMib N] [-RequireRamMib N] [-AllowContention]
+#
+# -RequireVramMib N   declare how much free VRAM this run needs (issue #44);
+#                     only checked with -Gpu. Default 0 - no requirement
+#                     declared, VRAM is reported, not gated.
+# -RequireRamMib N    declare how much RAM must actually be free (not just
+#                     installed) for this run to start. Default 0 - same.
+# -AllowContention    start anyway on a host that looks shared - a deliberate
+#                     override, logged as a warning every time it is used.
+#
+# Note on parity with preflight.sh: the bash version attributes GPU compute
+# processes to this project's own containers (cgroup match against 'docker
+# ps'), so it can tell "shared" from "exclusive" even while our own stack is
+# using the GPU. That attribution has no clean equivalent here - Docker
+# Desktop runs containers inside its own WSL2 VM, invisible to a host-side
+# PowerShell process list - so this script only reports total used/free VRAM
+# and the count of GPU compute processes, without attempting ownership.
+# preflight.ps1 has never been run against a real host (CLAUDE.md section 2:
+# "mai collaudato su Windows/ENV-L"); this is best-effort parity, not a claim
+# it has been verified against a real shared GPU on Windows.
 param(
     [ValidateSet("minimal", "recommended", "optimal")]
     [string]$Tier = "minimal",
-    [switch]$Gpu
+    [switch]$Gpu,
+    [int]$RequireVramMib = 0,
+    [int]$RequireRamMib = 0,
+    [switch]$AllowContention
 )
 $ErrorActionPreference = "Stop"
 
@@ -25,6 +48,7 @@ $want = $tiers[$Tier]
 $script:fail = $false
 function Write-Ok([string]$msg) { Write-Host "OK    $msg" }
 function Write-Fail([string]$msg) { Write-Host "FAIL  $msg" -ForegroundColor Red; $script:fail = $true }
+function Write-Info([string]$msg) { Write-Host "INFO  $msg" }
 
 # vm.max_map_count (P-6) is a Linux kernel setting checked by Elasticsearch /
 # OpenMetadata at bootstrap. On native Windows, Docker Desktop runs
@@ -37,6 +61,23 @@ if ($totalRamGb -ge $want.RamGb) {
     Write-Ok "RAM: $totalRamGb GiB (>= $($want.RamGb) GiB for tier '$Tier')"
 } else {
     Write-Fail "RAM: $totalRamGb GiB is below the $($want.RamGb) GiB the '$Tier' tier needs (README hardware table). The stack may still start but is likely to OOM under load."
+}
+
+# RAM actually free right now (issue #44) - a different fact from total RAM
+# above: a host with plenty of installed RAM can still have most of it
+# claimed by another workload. Only gated when the caller declares a need
+# (-RequireRamMib); otherwise this is descriptive, not a fabricated gate.
+$freeRamMib = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1KB)
+if ($RequireRamMib -gt 0) {
+    if ($freeRamMib -ge $RequireRamMib) {
+        Write-Ok "RAM free: $freeRamMib MiB (>= $RequireRamMib MiB declared with -RequireRamMib)"
+    } elseif ($AllowContention) {
+        Write-Warning "RAM free: $freeRamMib MiB is below the $RequireRamMib MiB this run declared it needs - starting anyway (-AllowContention)."
+    } else {
+        Write-Fail "RAM free: only $freeRamMib MiB available; this run declared it needs $RequireRamMib MiB free (-RequireRamMib). The host looks shared with another workload. Free RAM first, lower -RequireRamMib if the number was a guess, or pass -AllowContention to start anyway."
+    }
+} else {
+    Write-Info "RAM free: $freeRamMib MiB (no -RequireRamMib declared - descriptive only)"
 }
 
 $drive = (Get-Location).Drive
@@ -113,6 +154,37 @@ if ($Gpu) {
     if ($nvidiaSmi) {
         $gpuName = & nvidia-smi -L | Select-Object -First 1
         Write-Ok "GPU: $gpuName"
+
+        # GPU exclusivity (issue #44) - no container attribution on Windows
+        # (see the note above the param block): "shared" here means "a
+        # foreign compute process is running", not "ours is legitimately
+        # using the GPU too". Read before the stack starts, that distinction
+        # does not matter - nothing of ours should be on the GPU yet.
+        try {
+            $memLine = & nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | Select-Object -First 1
+            $memParts = $memLine -split ",\s*"
+            $usedMib = [int]$memParts[0]
+            $totalMib = [int]$memParts[1]
+            $freeMib = $totalMib - $usedMib
+            $procCount = 0
+            $procOut = & nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits 2>$null
+            if ($LASTEXITCODE -eq 0 -and $procOut) {
+                $procCount = @($procOut | Where-Object { $_.Trim() -ne "" }).Count
+            }
+            if ($RequireVramMib -gt 0 -and $freeMib -lt $RequireVramMib) {
+                if ($AllowContention) {
+                    Write-Warning "GPU exclusivity (#44): $usedMib/$totalMib MiB used ($procCount compute process(es) seen, unattributed on Windows), $freeMib MiB free; this run declared it needs $RequireVramMib MiB. Starting anyway (-AllowContention)."
+                } else {
+                    Write-Fail "GPU exclusivity (#44): only $freeMib MiB free ($usedMib/$totalMib MiB used, $procCount compute process(es) seen) - this run declared it needs $RequireVramMib MiB (-RequireVramMib) and will not fit. Wait for the GPU to free up, lower the model/tier, or pass -AllowContention to force it."
+                }
+            } elseif ($procCount -gt 0 -or $usedMib -gt 64) {
+                Write-Warning "GPU exclusivity (#44): $usedMib/$totalMib MiB used, $procCount compute process(es) seen before this project's own stack has started - looks shared (no -RequireVramMib declared, or $freeMib MiB free still covers it)."
+            } else {
+                Write-Ok "GPU exclusivity (#44): $usedMib/$totalMib MiB used, no compute process seen - looks exclusive"
+            }
+        } catch {
+            Write-Warning "GPU exclusivity (#44): could not read nvidia-smi memory/process output ($_) - treating as unknown, not as contention."
+        }
     } else {
         Write-Fail "GPU: -Gpu was requested but 'nvidia-smi' was not found. Install the current NVIDIA driver for WSL2 (not a separate in-distro driver) before passing -Gpu to start-addon.ps1."
     }

@@ -11,8 +11,7 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 ## [Unreleased]
 
 *(v0.0.3 — Fase 2, stack onesto sulle risorse. In coda: tier riscritti sui
-numeri misurati (T-PROF, [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23)),
-esclusività dell'host nei run ([#44](https://github.com/danielesalpietro/NORTHSTREAM/issues/44)).)*
+numeri misurati (T-PROF, [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23)).)*
 
 ### Added
 - `trino/catalog/postgresql.properties` — catalogo JDBC verso il Postgres
@@ -90,6 +89,41 @@ esclusività dell'host nei run ([#44](https://github.com/danielesalpietro/NORTHS
   (`core,lakehouse,governance`), preservando il comportamento di oggi, e
   accettano `--profile <nome>[,<nome>...]` (`-Profile` in PowerShell) per
   chi vuole esplicitamente lo stack snello (issue #21).
+
+### Added
+- **Esclusività dell'host (#44)** — pre-check, run-check, post-run, sui tre
+  momenti dichiarati dal piano. `bench/lib/gpu_exclusivity.py` (nuovo,
+  condiviso) risponde "la GPU è tutta nostra?" attribuendo ogni processo di
+  calcolo GPU (`nvidia-smi --query-compute-apps`) a un container di questo
+  compose project via match dell'id a 64 esadecimali in `/proc/<pid>/cgroup`
+  contro `docker ps --filter label=com.docker.compose.project=...`; un
+  processo non attribuibile è **foreign**, mai ignorato. Stato
+  `exclusive`/`shared`/`unknown` — mai un booleano che collassa "falso" su
+  "non l'ho potuto sapere" (CLAUDE.md §5): l'host senza `nvidia-smi` è
+  `unknown` ("non applicabile"), non `shared`.
+  - **Pre-check**: `preflight.sh`/`preflight.ps1` `--gpu` guadagnano
+    `--require-vram-mib N`, `--require-ram-mib N` (dichiarati dal
+    chiamante, mai inferiti da `--tier`) e `--allow-contention` (bypass
+    esplicito, sempre loggato). Rifiuta con causa/sintomo/rimedio quando la
+    VRAM libera o la RAM libera non coprono quanto dichiarato; su
+    `preflight.ps1` l'attribuzione per container non ha equivalente pulito
+    (Docker Desktop gira nella propria VM WSL2) ed è dichiarata come tale,
+    non finta.
+  - **Run-check**: `bench/t0/run.sh` campiona GPU/RAM fra un test e l'altro
+    (mai un demone in background: non deve mai poter uccidere la suite) e
+    registra il primo campione in stato `shared` (`contention_first_seen`),
+    senza abortire il run.
+  - **Post-run**: `manifest.json.exclusivity` — `declared` (da
+    `--exclusivity exclusive|shared|unknown`, default `unknown`, come già
+    su `feature/soak-harness` per il soak) e `detected` (calcolato dai
+    campioni), **mai fusi in un solo valore**: un operatore che dichiara
+    `exclusive` su un host che i campioni mostrano `shared` è esattamente
+    il disaccordo da preservare. Riga corrispondente in `summary.md` /
+    `docs/runs/<RUN_ID>.md`.
+  - I cinque report già archiviati in `docs/runs/` privi del campo
+    (precedenti a questa release, o su runner GitHub-hosted dove il
+    concetto non si applica nello stesso modo) sono **annotati** con
+    `unknown` in coda al file, non riscritti.
 
 ## [v0.0.2] — 2026-08-27
 

@@ -70,6 +70,27 @@ def sample_qdrant(url, collection):
         return {"collection": collection, "points_count": None, "error": str(exc)}
 
 
+def sample_connector(connect_url, connector_name):
+    """Kafka Connect REST status for the CDC connector — collected once at
+    run start (not per-sample) for the manifest's initial-conditions record.
+    Same discipline as everywhere else: unreachable or malformed means null
+    fields and an explicit error, never a guessed state."""
+    endpoint = f"{connect_url}/connectors/{connector_name}/status"
+    try:
+        with urllib.request.urlopen(endpoint, timeout=10) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        return {
+            "name": connector_name,
+            "connector_state": body.get("connector", {}).get("state"),
+            "task_states": [t.get("state") for t in body.get("tasks", [])],
+            "error": None,
+        }
+    except urllib.error.HTTPError as exc:
+        return {"name": connector_name, "connector_state": None, "task_states": None, "error": f"HTTP {exc.code}"}
+    except Exception as exc:  # noqa: BLE001
+        return {"name": connector_name, "connector_state": None, "task_states": None, "error": str(exc)}
+
+
 # The only two values this query can legitimately produce for a slot's
 # active flag (see the CASE in the query below, which pins the encoding
 # instead of trusting how `active || ':'` happens to stringify a boolean —
@@ -245,7 +266,11 @@ def collect_diagnostics(sample):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--seq", type=int, required=True)
+    parser.add_argument("--mode", choices=["sample", "init"], default="sample",
+                         help="'sample' (default): one periodic observation, JSON-lines. "
+                              "'init': one-shot pipeline state (connector + replication slot) "
+                              "for the manifest's initial conditions — issue #44.")
+    parser.add_argument("--seq", type=int, default=0, help="required for --mode sample")
     parser.add_argument("--out", default=None, help="JSON-lines file to append to (default: stdout)")
     parser.add_argument("--qdrant-url", default=os.environ.get("NS_QDRANT_URL", "http://localhost:6333"))
     parser.add_argument("--qdrant-collection", default=os.environ.get("NS_QDRANT_COLLECTION", "stream_events"))
@@ -253,7 +278,22 @@ def main():
     parser.add_argument("--postgres-db", default=os.environ.get("NS_PG_DB", "sales"))
     parser.add_argument("--postgres-user", default=os.environ.get("NS_PG_USER", "demo"))
     parser.add_argument("--container-prefix", default=os.environ.get("NS_CONTAINER_PREFIX", "northstream-"))
+    parser.add_argument("--connect-url", default=os.environ.get("NS_CONNECT_URL", "http://localhost:8083"))
+    parser.add_argument("--connector-name", default=os.environ.get("NS_CONNECTOR_NAME", "northstream-postgres-connector"))
     args = parser.parse_args()
+
+    if args.mode == "init":
+        postgres = sample_postgres(args.postgres_container, args.postgres_db, args.postgres_user)
+        init_state = {
+            "ts": now_iso(),
+            "connector": sample_connector(args.connect_url, args.connector_name),
+            "replication_slots": postgres["replication_slots"],
+            "table_counts": postgres["table_counts"],
+            "postgres_error": postgres["error"],
+            "postgres_warnings": postgres["warnings"],
+        }
+        sys.stdout.write(json.dumps(init_state, sort_keys=True) + "\n")
+        return
 
     sample = {
         "seq": args.seq,

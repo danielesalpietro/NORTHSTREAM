@@ -16,7 +16,8 @@ stack (or any part of it) is down, each affected subsystem records its own
 # under tmux/nohup — CLAUDE.md section 5 documents why: a dropped SSH
 # connection has already killed a deploy mid-way once.
 tmux new -s northstream-soak
-bench/soak/run.sh --interval 60 --duration $((24*3600)) --env envw
+bench/soak/run.sh --interval 60 --duration $((24*3600)) --env envw \
+  --exclusivity exclusive   # declare it — see below, default is 'unknown'
 
 # turn samples into a verdict, any time during or after the run
 python3 bench/soak/verdict.py \
@@ -26,6 +27,33 @@ python3 bench/soak/verdict.py \
 ```
 
 `run.sh --help` and `verdict.py --help` document every flag.
+
+### `--exclusivity` and the manifest's initial conditions (issue #44)
+
+`run.sh` never infers whether ENV-W was exclusively ours for a run — that
+classification is issue #44's own pre-check, still to be built in Fase 2.
+What this harness does instead, in the meantime:
+
+- **`--exclusivity exclusive|shared|unknown`** (default `unknown`) is declared
+  by whoever launches the run and written verbatim into `manifest.json`.
+  `unknown` is not a value to avoid — it is the honest answer when nobody
+  said, and is strictly better than a guess dressed up as a measurement.
+- **`manifest.json.initial_conditions`**, collected once at start via
+  `sample.py --mode init`: the CDC connector's state (Kafka Connect REST
+  `/connectors/<name>/status`) and the replication slot's state at the
+  moment the run began. Same discipline as every sample: unreachable means
+  `null` fields and an explicit error, never a guessed state.
+- **Per-sample GPU/RAM/load** (already collected every interval, see below)
+  is the run-check half of #44: `verdict.py`'s `host_exclusivity` summary
+  already reports the min/max GPU memory used across the whole run, so a
+  swing partway through is visible without any further code — a run that
+  started exclusive and became shared mid-way is distinguishable from one
+  that stayed clean throughout, straight from `samples.jsonl`.
+
+What's still #44's own scope, not this harness's: the pre-check gate that
+refuses to *start* a run on a shared host, and the automatic
+`exclusive`/`shared` classification (this harness only ever writes what was
+declared or observed, never infers a verdict).
 
 ## What each sample contains
 

@@ -47,6 +47,42 @@ if ($freeGb -ge $want.DiskGb) {
     Write-Fail "free disk on $($drive.Name): $freeGb GiB is below the $($want.DiskGb) GiB the '$Tier' tier needs for images and volumes."
 }
 
+# kafka_data volume vs apache/kafka's user (P-11). bitnamilegacy/kafka:3.7.1
+# ran as uid=1001 gid=0(root); apache/kafka:4.3.1 (#17) runs as
+# uid=1000(appuser) gid=1000. A kafka_data volume already populated by the
+# old image is left 0:0 mode 775 - writable by the group root the old
+# broker belonged to, not by the new one's gid 1000. The broker's own error
+# in that state (AccessDeniedException on a checkpoint file) never mentions
+# permissions or the image change, and CI cannot catch this: every
+# ci-smoke/ci-nightly run starts from a volume that does not exist yet.
+$dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
+if ($dockerCmd) {
+    docker info *> $null
+    if ($LASTEXITCODE -eq 0) {
+        $kafkaVol = (docker volume ls `
+            --filter "label=com.docker.compose.project=wap-northstream-lab" `
+            --filter "label=com.docker.compose.volume=kafka_data" `
+            --format "{{.Name}}") | Select-Object -First 1
+        if (-not $kafkaVol) {
+            Write-Ok "no pre-existing kafka_data volume - nothing to migrate (P-11 does not apply to a fresh install)"
+        } else {
+            $probeOut = docker run --rm --user 1000:1000 -v "${kafkaVol}:/check" busybox `
+                sh -c 'touch /check/.preflight-write-test && rm -f /check/.preflight-write-test' 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Ok "kafka_data volume ($kafkaVol) is writable by uid 1000 (apache/kafka's user)"
+            } elseif ($probeOut -match "(?i)permission denied") {
+                Write-Fail "kafka_data volume ($kafkaVol) is NOT writable by uid 1000 (apache/kafka's user, since #17/P-3). This volume was populated by the old bitnamilegacy/kafka image (uid 1001, gid 0) and the new one (uid 1000, gid 1000) cannot write to it - the broker will crash-loop with 'AccessDeniedException' on a checkpoint file, with no mention of permissions in the error. This data is a disposable local cache, not something to preserve: remove it and let the new image recreate it - 'docker volume rm $kafkaVol' (stack stopped), or 'docker compose down -v' for a full reset."
+            } else {
+                Write-Warning "could not verify kafka_data volume ($kafkaVol) ownership (P-11): $probeOut"
+            }
+        }
+    } else {
+        Write-Warning "docker CLI present but daemon not reachable - cannot check the kafka_data volume for P-11"
+    }
+} else {
+    Write-Warning "docker not available - cannot check the kafka_data volume for P-11"
+}
+
 if ($Gpu) {
     $nvidiaSmi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
     if ($nvidiaSmi) {

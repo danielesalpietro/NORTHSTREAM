@@ -7,6 +7,7 @@
 #   - vm.max_map_count >= 262144   (Elasticsearch / OpenMetadata bootstrap)
 #   - available RAM  >= tier floor (README hardware table)
 #   - free disk      >= tier floor (same table, current directory's filesystem)
+#   - an existing kafka_data volume is writable by apache/kafka's user (P-11)
 #   - NVIDIA GPU visible, only with --gpu (mirrors start-addon.sh --gpu)
 #
 # This is an explicit, separate step — NOT invoked automatically by
@@ -90,6 +91,40 @@ if [[ -n "${avail_kb:-}" ]]; then
     fi
 else
     warn "could not read free disk space — skipping"
+fi
+
+# --- kafka_data volume vs apache/kafka's user (P-11) ---
+# bitnamilegacy/kafka:3.7.1 ran as uid=1001 gid=0(root); apache/kafka:4.3.1
+# (#17) runs as uid=1000(appuser) gid=1000. A kafka_data volume already
+# populated by the old image is left 0:0 mode 775 — writable by the group
+# root the old broker belonged to, not by the new one's gid 1000. The
+# broker's own error in that state (AccessDeniedException on a checkpoint
+# file, tens of restarts) never mentions permissions or the image change.
+# This cannot be caught by CI: every ci-smoke/ci-nightly run starts from a
+# volume that does not exist yet, i.e. the one case that always works.
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    kafka_vol="$(docker volume ls \
+        --filter 'label=com.docker.compose.project=wap-northstream-lab' \
+        --filter 'label=com.docker.compose.volume=kafka_data' \
+        --format '{{.Name}}' 2>/dev/null | head -1)"
+    if [[ -z "$kafka_vol" ]]; then
+        ok "no pre-existing kafka_data volume — nothing to migrate (P-11 does not apply to a fresh install)"
+    else
+        probe_out="$(docker run --rm --user 1000:1000 -v "${kafka_vol}:/check" busybox \
+            sh -c 'touch /check/.preflight-write-test && rm -f /check/.preflight-write-test' 2>&1)"
+        probe_status=$?
+        if (( probe_status == 0 )); then
+            ok "kafka_data volume (${kafka_vol}) is writable by uid 1000 (apache/kafka's user)"
+        elif printf '%s' "$probe_out" | grep -qi 'permission denied'; then
+            err "kafka_data volume (${kafka_vol}) is NOT writable by uid 1000 (apache/kafka's user, since #17/P-3). This volume was populated by the old bitnamilegacy/kafka image (uid 1001, gid 0) and the new one (uid 1000, gid 1000) cannot write to it — the broker will crash-loop with 'AccessDeniedException' on a checkpoint file, with no mention of permissions in the error. This data is a disposable local cache, not something to preserve: remove it and let the new image recreate it — 'docker volume rm ${kafka_vol}' (stack stopped), or 'docker compose down -v' for a full reset."
+        else
+            warn "could not verify kafka_data volume (${kafka_vol}) ownership (P-11): ${probe_out}"
+        fi
+    fi
+elif command -v docker >/dev/null 2>&1; then
+    warn "docker CLI present but daemon not reachable — cannot check the kafka_data volume for P-11"
+else
+    warn "docker not available — cannot check the kafka_data volume for P-11"
 fi
 
 # --- GPU, only when --gpu was requested (mirrors start-addon.sh --gpu) ---

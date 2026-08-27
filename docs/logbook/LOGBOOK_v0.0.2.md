@@ -59,6 +59,8 @@ tempo. Issue di fase [#4](https://github.com/danielesalpietro/NORTHSTREAM/issues
 | [#19](https://github.com/danielesalpietro/NORTHSTREAM/issues/19) | Script preflight (`vm.max_map_count`, RAM, GPU) | P-6 | **implementato**, eseguito in sandbox; `.ps1` da collaudare su Windows/ENV-L |
 | [#41](https://github.com/danielesalpietro/NORTHSTREAM/issues/41) | Bit di esecuzione sui tre script del Quick Start | **P-9** | **chiuso e verificato su ENV-W**: lo step `./start-addon.sh --gpu` della nightly è verde |
 | [#42](https://github.com/danielesalpietro/NORTHSTREAM/issues/42) | Teardown di `ci-nightly` che cancella `ollama_data` | **P-10** | **chiuso e verificato su ENV-W**: progression test superato (v. sopra) |
+| [#45](https://github.com/danielesalpietro/NORTHSTREAM/issues/45) | Volume `kafka_data` incompatibile col nuovo UID di `apache/kafka` (#17) | **P-11** | **implementato**: preflight rileva e fallisce con rimedio; verifica reale con volume a proprietà vecchia spetta a ENV-W |
+| [#46](https://github.com/danielesalpietro/NORTHSTREAM/issues/46) | `trino/catalog` root-owned blocca `actions/checkout` alla nightly successiva | **P-12** | **implementato**: `.gitkeep` committato; verifica reale (due nightly consecutive) spetta a ENV-W, dopo che l'owner ha sbloccato il workspace col `sudo` che la sessione non ha |
 | [#20](https://github.com/danielesalpietro/NORTHSTREAM/issues/20) | Release v0.0.2: gate, CHANGELOG, tag | — | non iniziata |
 
 **Progression test dichiarati**: **T0.6** XFAIL → **PASS** dichiarato in
@@ -222,15 +224,21 @@ vuoto. Dettaglio in `docs/runs/20260827-0859-envw-9082a02.md`.
   entry del 27/08): entrambi i test ora provano il path assoluto per primo, con
   fallback al nome nudo. **Da riconfermare**: nessun run reale dopo il fix in
   questa sessione (nessun demone Docker) — resta a `ci-smoke` sul nuovo push.
-- **v0.0.2 rompe i lab esistenti (nuovo, 27/08)**: con un volume `kafka_data`
-  preesistente creato dall'immagine Bitnami (`uid 1001`, `gid 0`), `apache/kafka:4.3.1`
-  (`uid 1000`, `gid 1000`) non può scrivere e va in crash-loop. Volume fresco → healthy
-  in 23 s. La CI non lo vede per costruzione. Serve una nota di migrazione o un controllo
-  all'avvio — **decisione dell'owner**.
-- **`ci-nightly` non è ripetibile** sul runner self-hosted: `./trino/catalog`, creata
-  `root:root` da Docker al primo `up` (P-2), fa fallire `actions/checkout` di ogni run
-  successivo al primo. Serve `sudo rmdir` sul workspace e un fix (probabile:
-  `trino/catalog/.gitkeep` in git).
+- **P-11/[#45](https://github.com/danielesalpietro/NORTHSTREAM/issues/45) — implementato
+  da questa sessione**: `preflight.sh`/`.ps1` rileva un volume `kafka_data` preesistente
+  (via le label compose, non un nome hardcoded) e verifica che sia scrivibile
+  dall'utente `1000:1000` di `apache/kafka` con un `busybox` usa-e-getta; fallisce col
+  comando di rimedio (`docker volume rm ...`) se non lo è. Riga breaking nel CHANGELOG.
+  **Non verificabile in CI per costruzione** (ogni run parte da un volume inesistente):
+  la logica di branching è stata testata con un `docker` finto in questa sessione;
+  **la verifica reale — un volume creato deliberatamente con la proprietà vecchia —
+  spetta a ENV-W**.
+- **P-12/[#46](https://github.com/danielesalpietro/NORTHSTREAM/issues/46) —
+  implementato da questa sessione**: `trino/catalog/.gitkeep` committato, così Docker
+  non ricrea più la directory come `root:root` al primo `up`. **Lo sblocco del
+  workspace già compromesso su ENV-W resta dell'owner** (richiede `sudo`, che la
+  sessione ENV-W non ha): finché non è fatto, la prova vera del fix (due nightly
+  consecutive sullo stesso workspace) non può girare.
 - **La suite `full` sul codice di B** (`7364349` o successivo) resta da eseguire su
   ENV-W: il run del 27/08 misura `9082a02` e la sua riga T0.6 XFAIL **non** è il
   verdetto sul progression test della release.
@@ -245,16 +253,15 @@ La beta1 si sposta da metà a **fine settembre**. Il costo è accettato dall'own
 senza O8/O9 la beta1 sarebbe un sistema che passa i propri test tecnici e non
 dimostra niente a un utente finale.
 
-**Prossimo passo**: #42 è verificato; il fix del PATH Kafka nell'harness è
-pushato (v. quarta entry del 27/08) — resta da controllare l'esito di
-`ci-static`/`ci-smoke` sul nuovo push e far eseguire su ENV-W un nuovo run
-`full` contro il commit del fix — è lì che si misura **T0.6** in modo definitivo
-(progression test dichiarato della release) e che si conferma T0.2/T0.3 tornati
-PASS senza che il binding `127.0.0.1` (#18) li abbia rotti diversamente. Se
-entrambi verdi: #20 (gate di release, CHANGELOG → versione, README a fine
-release, tag). Se `ci-smoke` è ancora rosso, il fix del PATH non ha bastato:
-ricontrollare l'esatto path dei binari nell'immagine `apache/kafka:4.3.1` prima
-di ipotizzare altro.
+**Prossimo passo**: `ci-smoke` è verde e T0.2/T0.3 sono confermati PASS (v.
+quinta entry del 27/08) — **T0.6 è il progression test superato**. #45 (P-11)
+e #46 (P-12) sono implementati (v. sopra), ma nessuno dei due è verificabile
+in CI per costruzione: **serve ENV-W** per (a) creare deliberatamente un
+volume `kafka_data` con la proprietà vecchia e osservare che il preflight lo
+rifiuti, e (b) far girare due nightly consecutive sullo stesso workspace dopo
+che l'owner ha sbloccato con `sudo` la `trino/catalog` root-owned già creata.
+Se entrambe verificate: #20 (gate di release, CHANGELOG → versione, README a
+fine release, tag).
 
 ---
 
@@ -756,3 +763,87 @@ nudo, come già fa l'healthcheck.
 - **Prossimo passo per la sessione successiva**: sbloccare `trino/catalog` e rieseguire
   la suite `full` contro l'head — **T0.6 con modelli veri resta non misurato**, e con esso
   il progression test della release.
+
+---
+
+## 2026-08-27 (terza entry) — sessione cloud (nessun demone Docker) — sessione B, `claude-sonnet-5`
+
+- **Obiettivo della sessione**: rispondere al check-in della supervisione — `ci-smoke`
+  verde confermato, T0.2/T0.3 tornati PASS; la finestra esclusiva su ENV-W ha trovato
+  due nuovi difetti nello scope di questa sessione, **P-11** ([#45](https://github.com/danielesalpietro/NORTHSTREAM/issues/45))
+  e **P-12** ([#46](https://github.com/danielesalpietro/NORTHSTREAM/issues/46)), entrambi
+  già verificati per misura dalla sessione ENV-W (v. entry precedente): non ridiagnosticati
+  qui, solo implementati i fix richiesti.
+- **Fatto**:
+  - `git pull --rebase origin release/v0.0.2` per integrare i commit di supervisione/ENV-W
+    arrivati nel frattempo (misura VRAM 32b, apertura P-11/P-12, finestra ENV-W in CLAUDE.md).
+  - `trino/catalog/.gitkeep` committato (P-12, #46): la directory ora esiste in git, quindi
+    Docker non la ricrea più `root:root` al primo `up` sul runner self-hosted.
+  - `preflight.sh` / `preflight.ps1` estesi (P-11, #45): nuovo controllo che cerca un volume
+    `kafka_data` preesistente tramite le label che compose assegna
+    (`com.docker.compose.project`/`.volume`, non un nome hardcoded), e se lo trova verifica
+    che sia scrivibile dall'utente `1000:1000` di `apache/kafka` con un container `busybox`
+    usa-e-getta (`touch` + `rm` di un file di prova). Fallisce con `docker volume rm ...` come
+    rimedio se non è scrivibile; un errore generico (docker non raggiungibile, pull fallito)
+    diventa `WARN`, non un falso positivo o un `FAIL` fuorviante.
+  - `CHANGELOG.md`: nuova sezione "⚠ Breaking (lab esistenti)" in testa a `[Unreleased]` che
+    dichiara il cambio di UID come breaking per chi aggiorna un lab esistente, col comando di
+    rimedio — richiesto esplicitamente dalla issue #45, non solo la riga tecnica sotto Added.
+- **Decisioni prese**:
+  - **Rilevamento del volume via label compose, non via nome hardcoded**
+    (`wap-northstream-lab_kafka_data`): le label (`com.docker.compose.project=...`,
+    `com.docker.compose.volume=kafka_data`) sono ciò che compose stesso assegna e sono
+    documentate come il modo robusto di identificare i propri oggetti; un nome hardcoded si
+    romperebbe silenziosamente se lo schema di naming di compose cambiasse in una versione
+    futura. *Alternativa scartata*: `docker volume ls --filter name=kafka_data` — più fragile,
+    matcherebbe anche un volume di un altro progetto con lo stesso suffisso.
+  - **Test di scrivibilità con `busybox --user 1000:1000`, non con l'immagine reale
+    `apache/kafka`**: replica esattamente il meccanismo del difetto (l'utente 1000:1000 non
+    scrivendo il volume) senza il costo di tirare giù l'immagine Kafka intera solo per un
+    controllo di permessi. *Alternativa scartata*: ispezionare `stat` dei file nel volume e
+    confrontare owner/gid con valori hardcoded (1001/0) — funziona solo se quei valori esatti
+    sono quelli osservati; il test comportamentale (può scrivere o no l'utente 1000:1000) resta
+    valido anche se i numeri storici cambiassero.
+  - **Errore generico → `WARN`, non `FAIL` né `OK` silenzioso**: distinguere "il volume non è
+    scrivibile" da "non sono riuscito a verificare" (docker non raggiungibile, pull di
+    `busybox` fallito per assenza di rete) evita sia un falso positivo bloccante sia un
+    falso negativo che nasconde un problema reale dietro un errore di infrastruttura.
+  - **Sezione "⚠ Breaking" separata nel CHANGELOG**, non solo una riga sotto "Changed": la
+    issue #45 la richiede esplicitamente come complemento del controllo automatico, non come
+    sostituto — chi legge il CHANGELOG prima di aggiornare deve vederla senza dover leggere
+    ogni riga tecnica.
+- **Test eseguiti**:
+  - `bash -n` su `preflight.sh` → sintassi valida (`preflight.ps1` non verificabile, nessun
+    PowerShell in questa sessione).
+  - **Simulazione della logica di branching con un `docker` finto** (funzione bash che
+    intercetta le sotto-chiamate `info`/`volume`/`run`): verificate le quattro strade —
+    nessun volume esistente → `OK`; volume scrivibile → `OK`; volume non scrivibile
+    (`Permission denied` nello stderr simulato) → `FAIL` col rimedio; errore generico →
+    `WARN`. Tutte e quattro si comportano come atteso.
+  - `./preflight.sh` reale in questa sandbox (nessun demone Docker): la nuova sezione P-11
+    stampa correttamente `WARN docker CLI present but daemon not reachable`, coerente col
+    ramo "docker non raggiungibile" della logica.
+  - `docker compose -f ... config -q` su tutte le combinazioni → validano ancora, inclusa la
+    presenza della nuova `trino/catalog/.gitkeep` (bind-mount ora punta a una directory che
+    esiste davvero in git, non solo creata da Docker).
+  - `bash bench/t0/run.sh --suite static` → `T0.1 PASS, T0.12 PASS, T-REPRO PASS`, nessuna
+    regressione.
+  - `yamllint`/`ruff` puliti (invariato).
+  - **Non verificabile qui, per costruzione (dichiarato esplicitamente dalla issue)**: il
+    comportamento reale del controllo P-11 richiede un volume `kafka_data` creato
+    deliberatamente con la vecchia proprietà, e il comportamento reale di P-12 richiede due
+    nightly consecutive sullo stesso workspace — **entrambi spettano a ENV-W**, come chiesto
+    dalla supervisione nel check-in.
+- **Costo della sessione**: `claude-sonnet-5` (come configurato), stessa sessione delle
+  entry precedenti — turno ripreso dopo un check-in schedulato.
+- **Non funziona / sospeso**: la verifica reale di P-11 (volume a proprietà vecchia) e di
+  P-12 (due nightly consecutive, bloccata finché l'owner non sblocca con `sudo` il workspace
+  ENV-W già compromesso) restano aperte — v. "Aperto" in testa.
+- **Prossimo passo per la sessione successiva**: dopo il push, verificare `ci-static`/
+  `ci-smoke` (dovrebbero restare verdi: nessuna modifica comportamentale allo stack, solo un
+  nuovo controllo preflight e una directory vuota) e poi passare la palla a ENV-W per le due
+  verifiche reali di P-11/P-12. Se entrambe confermano i fix, l'ultimo passo della fase è
+  #20.
+- **Decisioni richieste all'owner**: nessuna nuova oltre a quella già in sospeso da
+  P-12/#46 — sbloccare `trino/catalog` root-owned sul workspace ENV-W (`sudo rmdir`), che
+  nessuna sessione agente può fare da sola.

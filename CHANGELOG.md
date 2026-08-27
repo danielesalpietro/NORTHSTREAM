@@ -10,6 +10,23 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 
 ## [Unreleased]
 
+### ⚠ Breaking (lab esistenti)
+- **Chi aggiorna un lab NORTHSTREAM esistente a questa release deve rimuovere
+  il volume `kafka_data` prima del primo avvio** (`docker volume rm
+  wap-northstream-lab_kafka_data`, o `docker compose down -v` per un reset
+  completo). La sostituzione di `bitnamilegacy/kafka:3.7.1` con
+  `apache/kafka:4.3.1` (#17) cambia anche l'utente del container: da
+  `uid=1001 gid=0(root)` a `uid=1000(appuser) gid=1000`. Un volume popolato
+  dalla vecchia immagine resta `0:0` modo `775` — scrivibile dal gruppo
+  root, di cui il vecchio broker faceva parte e il nuovo no — e il broker
+  va in crash-loop con `AccessDeniedException`, un errore che non nomina né
+  i permessi né il cambio d'immagine (**P-11**,
+  [#45](https://github.com/danielesalpietro/NORTHSTREAM/issues/45)). Il
+  dato in quel volume è una cache locale effimera: rimuoverlo non perde
+  nulla che CDC non possa ricostruire. `preflight.sh`/`.ps1` (#19) ora
+  rileva questa condizione **prima** dell'avvio e fallisce con il comando
+  di rimedio — v. sotto.
+
 ### Changed
 - `docker-compose-northstream-ai.yml`: `bitnamilegacy/kafka:3.7.1` sostituito con
   `apache/kafka:4.3.1`, pinnato a versione+digest (P-3, P-4, O3.2,
@@ -78,6 +95,27 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
   `minimal`), ed esce con `FAIL` e i tre rimedi; `preflight.ps1` non è
   eseguibile in questa sessione (nessun PowerShell) — scritto per
   simmetria con `start-addon.ps1`, da collaudare su ENV-L/host Windows.
+- `preflight.sh` / `preflight.ps1`: nuovo controllo per **P-11** — rileva un
+  volume `kafka_data` preesistente (via le label `com.docker.compose.*` che
+  compose assegna, non un nome hardcoded) e verifica che sia scrivibile
+  dall'utente `1000:1000` di `apache/kafka` con un container `busybox`
+  usa-e-getta; fallisce con il comando di rimedio (`docker volume rm ...`)
+  se non lo è, distinguendo un vero permission-denied da un errore
+  generico (docker non raggiungibile, pull fallito) che diventa un
+  `WARN`, non un falso positivo
+  ([#45](https://github.com/danielesalpietro/NORTHSTREAM/issues/45)).
+  **Non verificabile in CI per costruzione** (`ci-smoke`/`ci-nightly`
+  partono sempre da un volume inesistente, l'unico caso che funziona): la
+  logica di branching (nessun volume / scrivibile / non scrivibile / errore
+  generico) è stata verificata in questa sessione con un `docker` finto che
+  simula le quattro risposte; **la verifica reale, con un volume creato
+  deliberatamente con la proprietà vecchia, spetta a ENV-W**.
+- `trino/catalog/.gitkeep` — la directory non esisteva nel repository
+  (metà del finding P-2): Docker la creava `root:root` al primo `up` sul
+  runner self-hosted, e alla nightly successiva `actions/checkout` moriva
+  con `EACCES` nel ripulire il workspace (**P-12**,
+  [#46](https://github.com/danielesalpietro/NORTHSTREAM/issues/46)). Con
+  la directory già presente in git, Docker non la ricrea come root.
 
 ### Fixed
 - `bench/t0/lib/doc_truth.py`: `kafka_advertises_host()` cercava solo la

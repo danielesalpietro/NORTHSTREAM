@@ -61,6 +61,24 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
   `127.0.0.1` sull'host, quindi T0.6 (`localhost:29092`) e `ci-smoke`
   (che gira `curl` sullo stesso host dei container) restano coerenti.
 
+### Added
+- `preflight.sh` / `preflight.ps1`: script di preflight (P-6) — verifica
+  `vm.max_map_count ≥ 262144` (prima causa concreta del bootstrap loop di
+  Elasticsearch/OpenMetadata su Linux nativo, dove Docker Desktop/WSL2 non lo
+  preimposta), RAM e spazio disco disponibili contro le soglie del tier
+  scelto (`--tier minimal|recommended|optimal`, default `minimal`, soglie
+  allineate alla tabella hardware del README), driver NVIDIA con `--gpu`.
+  Fallisce con un messaggio azionabile invece di lasciar morire un
+  container in silenzio. **Passo esplicito, non invocato automaticamente**
+  da `start-addon.sh`/`.ps1` in questa release — motivato nel logbook di
+  fase ([#19](https://github.com/danielesalpietro/NORTHSTREAM/issues/19)).
+  Verificato in questa sessione (nessun demone Docker, ma bash sì): su
+  questo host sandbox rileva correttamente `vm.max_map_count=65530` (sotto
+  soglia), 15 GiB di RAM e 29 GiB liberi (entrambi sotto la soglia
+  `minimal`), ed esce con `FAIL` e i tre rimedi; `preflight.ps1` non è
+  eseguibile in questa sessione (nessun PowerShell) — scritto per
+  simmetria con `start-addon.ps1`, da collaudare su ENV-L/host Windows.
+
 ### Fixed
 - `bench/t0/lib/doc_truth.py`: `kafka_advertises_host()` cercava solo la
   chiave Bitnami `KAFKA_CFG_ADVERTISED_LISTENERS`. Dopo la migrazione a

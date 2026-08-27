@@ -46,14 +46,14 @@ la prima azione della sessione è segnalarlo nel logbook, non ricostruirlo a mem
 
 | Campo | Valore |
 |---|---|
-| **Fase attiva** | Fase 0 — Baseline, release `v0.0.1` in preparazione |
-| **Baseline** | `develop` @ `5eb456a` — tag `v0.0.0-baseline` **pubblicato dall'owner** (tag lightweight su origin; la sessione ENV-W lo aveva creato solo in locale, annotato: il suo push era fallito per mancanza di credenziali — v. 5ª entry del logbook, che corregge l'attribuzione della 4ª) |
-| **Branch di lavoro** | `release/v0.0.1` (merge di `claude/project-plan-review-473nje` + harness `bench/` + CI + fix documentali O2) |
-| **Ultimo run T0** | [`docs/runs/20260826-2053-envw-5eb456a-baseline.md`](docs/runs/20260826-2053-envw-5eb456a-baseline.md) — **run di riferimento O1.3**: suite `full` contro il tag `v0.0.0-baseline` su ENV-W con modelli reali, 5 PASS + 6 XFAIL + 1 XPASS, `RESULT: OK (no regression)`. Collaudo su `release/v0.0.1` nello stesso giro: [`docs/runs/20260826-2049-envw-659236a.md`](docs/runs/20260826-2049-envw-659236a.md) (6 PASS + 4 XFAIL). L'XPASS di T0.10 è spiegato nel report: **non** è un difetto risolto |
-| **Prossima azione** | [#15](https://github.com/danielesalpietro/NORTHSTREAM/issues/15) tag `v0.0.1` — **gate verde**: `ci-static` e `ci-smoke` verdi su `c304694`, run di riferimento archiviato, T0.12 flippato, e le due lacune del harness segnalate dal run ENV-W (archiviazione §3 e default di T0.9) sono chiuse. Il tag lo appone l'owner |
-| **Sessioni operative attive** | Nessuna in corso. Chiuse: Fase 0 cloud (`session_01GaPWBapF7LMthmjyPoC9Cd`): #11/#12/#14 · ENV-W Z8 (`session_012WiW8ep5PVnGmm7exagMDu`): tag baseline, poi **archiviata da un timeout SSH** senza chiusura — stato ricostruito nella 5ª entry del logbook · ENV-W Z8 (`session_76a19823`): #10 + #13, chiusa regolarmente (6ª entry) |
-| **Blocchi aperti** | RP-0 (probe DinD su RunPod, issue #34) non ancora eseguito · ~~runner self-hosted ENV-W da registrare~~ **RISOLTO** (26/08 22:04): `z8-env-w` registrato con label `env-w`, servizio `actions.runner.danielesalpietro-NORTHSTREAM.z8-env-w` *active/enabled* sulla Z8, indipendente dal runner dell'altro repo · **`RUN_NIGHTLY` resta volutamente NON impostata**: accenderla schedula la nightly delle 02:30, il cui teardown fa `down -v` e cancella `ollama_data` — va prima chiuso **P-10** ([#42](https://github.com/danielesalpietro/NORTHSTREAM/issues/42)) in v0.0.2. Finché la variabile è spenta, il gate `if: vars.RUN_NIGHTLY == 'true'` tiene `ci-nightly` dormiente e il runner registrato è innocuo · ~~ENV-W non può pubblicare su GitHub~~ **RISOLTO** (9ª entry, 26/08): `gh` autenticato come `danielesalpietro` (scope `repo`), `ssh -T git@github.com` OK, `git push --dry-run` exit 0 · **XPASS di T0.10** nel run di riferimento da sanare prima che venga letto come difetto risolto (v. 6ª entry, decisione 2) · **P-9 CONFERMATO per prova** (9ª entry): i tre script del Quick Start sono `100644` in git; su clone pulito `./start-addon.sh --help` → `Permission denied`, exit 126. Da formalizzare come finding e assegnare a v0.0.2 · limite settimanale claude-fable-5 esaurito fino al ~28/08 (usare opus-5 o sonnet-5) |
-| **Tracking fasi** | Fase 0 [#3](https://github.com/danielesalpietro/NORTHSTREAM/issues/3) · Fase 1 [#4](https://github.com/danielesalpietro/NORTHSTREAM/issues/4) · Fase 2 [#5](https://github.com/danielesalpietro/NORTHSTREAM/issues/5) · Fase 3 [#6](https://github.com/danielesalpietro/NORTHSTREAM/issues/6) · Fase 4 [#7](https://github.com/danielesalpietro/NORTHSTREAM/issues/7) · Fase 5 [#8](https://github.com/danielesalpietro/NORTHSTREAM/issues/8) — ogni fase ha sub-issue collegate; una fase si apre solo col tag della precedente |
+| **Fase attiva** | **Fase 1 — Raggiungibilità e riproducibilità**, release `v0.0.2`. Fase 0 chiusa il 26/08 col tag `v0.0.1` |
+| **Baseline** | `v0.0.0-baseline` → `5eb456a` (lightweight) · `v0.0.1` → `d3053be` (annotato) · `develop` allineato col merge `60269f7` |
+| **Branch di lavoro** | da aprire: `release/v0.0.2` da `develop` |
+| **Ultimo run T0** | [`docs/runs/20260826-2053-envw-5eb456a-baseline.md`](docs/runs/20260826-2053-envw-5eb456a-baseline.md) — **run di riferimento**: suite `full` contro il tag baseline su ENV-W con modelli reali, 5 PASS + 6 XFAIL + 1 XPASS, `RESULT: OK`. È il metro: ogni release si misura contro questa tabella. L'XPASS di T0.10 **non** è un difetto risolto (issue #40) |
+| **Prossima azione** | Aprire `release/v0.0.2` e assegnare [#16](https://github.com/danielesalpietro/NORTHSTREAM/issues/16) — doppio listener Kafka, progression test T0.6, unico BLOCKER comportamentale della review ancora aperto |
+| **Sessioni operative attive** | Nessuna |
+| **Blocchi aperti** | **`RUN_NIGHTLY` NON va impostata finché [#42](https://github.com/danielesalpietro/NORTHSTREAM/issues/42) non è chiuso**: il teardown di `ci-nightly` fa `down -v` e cancellerebbe `ollama_data` a ogni notte. Il runner `z8-env-w` è registrato e attivo, ma il gate `if: vars.RUN_NIGHTLY == 'true'` lo tiene dormiente e innocuo · [#40](https://github.com/danielesalpietro/NORTHSTREAM/issues/40) T0.10 non robusto (Fase 3) · P-5 verificabile solo su ENV-L o con `mem_limit` (Fase 2, T-PROF) · RP-0 non eseguito ma **opzionale**: la matrice EVAL entra nella 3090 · limite settimanale `claude-fable-5` esaurito fino al ~28/08 |
+| **Tracking fasi** | ~~Fase 0 [#3](https://github.com/danielesalpietro/NORTHSTREAM/issues/3)~~ **chiusa** · **Fase 1 [#4](https://github.com/danielesalpietro/NORTHSTREAM/issues/4) ← corrente** · Fase 2 [#5](https://github.com/danielesalpietro/NORTHSTREAM/issues/5) · Fase 3 [#6](https://github.com/danielesalpietro/NORTHSTREAM/issues/6) · Fase 4 [#7](https://github.com/danielesalpietro/NORTHSTREAM/issues/7) · **Fase 6 [#43](https://github.com/danielesalpietro/NORTHSTREAM/issues/43) — casi d'uso ed Explain Change (v0.0.6), inserita fra la 4 e la 5** · Fase 5 [#8](https://github.com/danielesalpietro/NORTHSTREAM/issues/8) beta1 — una fase si apre solo col tag della precedente |
 | **Issue di riferimento** | [#2](https://github.com/danielesalpietro/NORTHSTREAM/issues/2) (review) · [#1](https://github.com/danielesalpietro/NORTHSTREAM/issues/1) (Norimberga: decisione in Fase 5, issue #36) |
 
 ## 3. Regole non negoziabili
@@ -66,6 +66,17 @@ la prima azione della sessione è segnalarlo nel logbook, non ricostruirlo a mem
    piano). I layer di scenografia (Flink, Iceberg, metastore MinIO, K8s) sono
    congelati fino a dopo v0.1.0-beta1: qualunque tentazione va annotata nel logbook
    come proposta, non implementata.
+   **Precisazione (27/08): il vincolo riguarda le modifiche al comportamento del
+   sistema, non gli strumenti di misura.** La regola "la fase N si apre col tag
+   della N−1" esiste per la non-regressione: due release che cambiano lo stesso
+   comportamento in parallelo rendono impossibile attribuire una regressione. Non
+   si applica quindi a: (a) **infrastruttura di test** — costruire fixture, suite
+   EVAL, o irrobustire un test può essere anticipato di fasi, perché il codice di
+   test non è il sistema misurato; (b) **esecuzione di run** — soak, matrici,
+   nightly: misurano, non modificano, e girano nelle ore morte della Z8 a costo
+   cloud zero. Anticipare questi due è incoraggiato e va annotato nel logbook della
+   fase che li ospita, citando la fase che li consumerà. Restano invece sequenziali
+   tutte le modifiche a `stream-agent/`, ai compose e agli script.
 3. **Verità documentale.** Mai aggiungere al README un claim non coperto dal
    comportamento reale. Ogni path citato deve esistere; ogni endpoint in tabella
    deve rispondere.
@@ -237,6 +248,42 @@ primo colpo.
 | Progettazione su codice delicato, con gate di qualità da interpretare | `claude-opus-5` | Fase 3 (retrieval, point-id, recency, `/health`), Fase 5 (lettura della matrice EVAL, decisioni di release) |
 | Integrazione fiddly con prodotto poco conosciuto | `claude-sonnet-5`, escalation a `claude-opus-5` se si blocca due volte sullo stesso punto | Fase 4 (ingestion OpenMetadata) |
 | Qualunque cosa | mai `claude-fable-5` senza richiesta esplicita dell'owner | consuma budget al doppio della velocità di opus-5, ed è il pool già esaurito |
+
+**Promozione fino al 31/08/2026**: i limiti settimanali sono potenziati del 50%.
+Dopo quella data tornano allo standard, cioè un terzo in meno. Le fasi costose
+(Fase 3 su tutte: ridisegno retrieval + suite EVAL + soak) vanno anticipate
+dentro la finestra potenziata, non rimandate dopo.
+
+### Triage di un sotto-task, in quest'ordine
+
+Prima di assegnare un modello a un pezzo di lavoro, due domande più economiche:
+
+1. **Serve un modello?** Verificare che un tag esista, estrarre un numero da un
+   JSON, controllare l'esito di un workflow, contare i punti di una collection:
+   sono `grep`, `jq`, `git`, `curl`. Costo zero, esito deterministico, nessuna
+   allucinazione possibile. La maggior parte delle verifiche di questo progetto
+   sta qui.
+2. **Può girare in locale?** La Z8 ha una 3090 e i modelli Granite già scaricati.
+   Digestione di log voluminosi, riassunto di output di container, estrazione
+   strutturata: girano lì a costo cloud **zero**, non "ridotto". Vincolo: l'output
+   va verificato meccanicamente (un grep che controlli che errori, exit code e
+   nomi dei test falliti siano sopravvissuti alla compressione).
+3. **Solo allora, quale tier** — secondo la tabella sopra.
+
+**Quando frammentare, e quando no.** Ogni sessione separata ripaga da zero
+l'onboarding (§8: ~29.000 token, che restano in contesto per tutti i suoi turni).
+Un sotto-task merita una sessione propria solo se è **autosufficiente** (briefing
+completo scrivibile in poche righe) e **abbastanza grosso** da ripagare quel costo.
+Sotto quella soglia la delega è una perdita netta, anche su un modello più
+economico.
+
+**Non si delega mai verso il basso**: diagnosi, decisioni di gate, giudizio su
+cosa significhi un esito di test, e qualunque cosa richieda di collegare fatti
+distanti. I tre ritrovamenti migliori della Fase 0 — il `bash -lc` che perde il
+PATH, l'istruzione contraddittoria su `RUN_NIGHTLY`, l'XPASS di T0.10 come
+artefatto della dimensione del corpus — non vengono dal macinare dati, vengono da
+una sessione che teneva insieme il quadro. Frammentarle produce cinque sessioni
+che fanno bene il proprio pezzo mentre nessuno vede il pattern.
 
 **Il driver dominante non è il modello: è la lunghezza della sessione.**
 La sessione Fase 0 ha totalizzato 63 milioni di token di lettura da cache perché

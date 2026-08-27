@@ -9,15 +9,18 @@ forma compressa della fase, e alla chiusura diventa l'ESITO FASE.
 
 ---
 
-## SINTESI DI FASE — aggiornata al 2026-08-26, 22:05 UTC
+## ESITO FASE 0 — chiusa il 2026-08-26 con il tag `v0.0.1` → `d3053be`
 
-**Dove siamo**: Fase 0 completa sul piano tecnico. Tag `v0.0.0-baseline` → `5eb456a`
-pubblicato. Su `release/v0.0.1`: harness `bench/t0/` (12 test), tre workflow CI
-(`ci-static` e `ci-smoke` **verdi**), fix documentali (T0.12 flippato), collaudo in
-macchina e **run T0 di riferimento archiviato**. Resta solo #15: il tag `v0.0.1`,
-azione dell'owner. **ENV-W pubblica di nuovo su GitHub** (blocco risolto, v. sotto);
-lo stack sulla Z8 è **spento** con i volumi conservati; **P-9 è confermato per
-prova**; il runner self-hosted `env-w` è **preparato ma non ancora registrato**.
+**Esito**: fase chiusa. Tag `v0.0.0-baseline` → `5eb456a` e tag `v0.0.1` → `d3053be`
+pubblicati; `develop` allineato col merge `60269f7`. Tutte e sette le sub-issue
+(#9–#15) chiuse. Consegnato: harness `bench/t0/` (12 test), tre workflow CI con
+`ci-static` e `ci-smoke` verdi, runner self-hosted `z8-env-w` registrato e attivo,
+README allineato al sistema reale (T0.12 flippato), e il **run T0 di riferimento**
+contro il tag baseline con modelli reali — il metro di ogni release successiva.
+
+**Che cosa rilascia v0.0.1**: la capacità di *misurare* il progetto e la verità
+documentale. Il runtime di stack e agent è identico alla baseline: v0.0.1 non
+ripara il sistema, lo rende osservabile e smette di raccontarlo male.
 
 **Decisioni prese, con il perché**
 - **Storyline README accorciata, non costruita**: i layer non collegati (Flink,
@@ -73,14 +76,18 @@ prova**; il runner self-hosted `env-w` è **preparato ma non ancora registrato**
   (263:1). Il costo è rilettura, non generazione.
 
 **Aperto**
-- #15 (tag `v0.0.1`) — unica azione mancante per chiudere la fase, spetta all'owner.
-- **Runner self-hosted `env-w`**: tarball estratto e pronto in
-  `~/actions-runner-northstream/` sulla Z8, **registrazione da eseguire**
-  (comando nella 9ª entry). `RUN_NIGHTLY` **volutamente non impostata**.
-- #40 (T0.10 fragile), **P-9 (confermato, da formalizzare e assegnare a v0.0.2)**,
-  RP-0.
-- **Teardown distruttivo di `ci-nightly`**: `down -v` a fine job cancella
-  `ollama_data` a ogni nightly. Da valutare in v0.0.2 prima di accendere la nightly.
+**Consegnato alla Fase 1 (v0.0.2)**
+- **#41 — P-9**: script del Quick Start non eseguibili su clone pulito (exit 126).
+- **#42 — P-10**: teardown di `ci-nightly` con `down -v` che cancella `ollama_data`.
+  **Da chiudere prima di impostare `RUN_NIGHTLY`**: finché la variabile è spenta il
+  gate tiene il workflow dormiente e il runner registrato è innocuo.
+- Progression test dichiarato di v0.0.2: **T0.6** (doppio listener Kafka).
+
+**Ancora aperto oltre la Fase 1**
+- **#40** — T0.10 non è un test robusto di ciò che dichiara di misurare (Fase 3).
+- **P-5** verificabile solo su ENV-L o con `mem_limit` (Fase 2, T-PROF).
+- **RP-0** (probe DinD su RunPod) non eseguito — e reso **opzionale**: tutta la
+  matrice EVAL entra nei 24 GB della 3090, quindi gira su ENV-W via `ci-nightly`.
 
 **Risolto rispetto alla testa precedente**
 - **ENV-W può di nuovo pubblicare su GitHub**: `gh auth status` → autenticato come
@@ -88,9 +95,13 @@ prova**; il runner self-hosted `env-w` è **preparato ma non ancora registrato**
   `git push --dry-run` → exit 0. Il blocco che rendeva ENV-W «un ambiente che
   misura ma non pubblica» non c'è più.
 
-**Prossimo passo**: l'owner appone il tag `v0.0.1`; in parallelo registra il runner
-`z8-env-w` (#12). Poi si apre la Fase 1 (v0.0.2) con i progression test T0.6
-(doppio listener Kafka) come primo obiettivo, e con P-9 nello scope.
+**Correzioni alla review prodotte dalla misura** — la fase ha smentito o
+ridimensionato quattro affermazioni del documento che l'ha aperta: **A-8** non è
+costante (~5 min) ma uniforme in [0, 5 min]; **P-6** non è riproducibile su host
+preconfigurato; **A-1** resta vero nel meccanismo ma la sua premessa sul ranking
+non regge su corpus piccolo — e la collection era piccola *a causa di A-3*, un
+difetto che ne mascherava un altro; **P-5** stimava 20-24 GB contro 9,52 GiB
+misurati. È il funzionamento previsto del metodo: il report comanda sul documento.
 
 ---
 

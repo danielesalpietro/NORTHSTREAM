@@ -222,6 +222,15 @@ vuoto. Dettaglio in `docs/runs/20260827-0859-envw-9082a02.md`.
   entry del 27/08): entrambi i test ora provano il path assoluto per primo, con
   fallback al nome nudo. **Da riconfermare**: nessun run reale dopo il fix in
   questa sessione (nessun demone Docker) — resta a `ci-smoke` sul nuovo push.
+- **v0.0.2 rompe i lab esistenti (nuovo, 27/08)**: con un volume `kafka_data`
+  preesistente creato dall'immagine Bitnami (`uid 1001`, `gid 0`), `apache/kafka:4.3.1`
+  (`uid 1000`, `gid 1000`) non può scrivere e va in crash-loop. Volume fresco → healthy
+  in 23 s. La CI non lo vede per costruzione. Serve una nota di migrazione o un controllo
+  all'avvio — **decisione dell'owner**.
+- **`ci-nightly` non è ripetibile** sul runner self-hosted: `./trino/catalog`, creata
+  `root:root` da Docker al primo `up` (P-2), fa fallire `actions/checkout` di ogni run
+  successivo al primo. Serve `sudo rmdir` sul workspace e un fix (probabile:
+  `trino/catalog/.gitkeep` in git).
 - **La suite `full` sul codice di B** (`7364349` o successivo) resta da eseguire su
   ENV-W: il run del 27/08 misura `9082a02` e la sua riga T0.6 XFAIL **non** è il
   verdetto sul progression test della release.
@@ -681,3 +690,69 @@ nudo, come già fa l'healthcheck.
   rosso, il fix del PATH non è bastato — controllare l'esatto layout binari di
   `apache/kafka:4.3.1` (potrebbe essere cambiato path o nome) prima di altre
   ipotesi.
+
+## 2026-08-27 (seconda entry ENV-W) — ENV-W (Z8, finestra esclusiva) — host di verifica
+
+- **Obiettivo della sessione**: sfruttare la finestra di manutenzione esclusiva di 12 h
+  dichiarata dall'owner per (1) eseguire la suite `full` contro l'head e chiudere la
+  misura di v0.0.2, (2) verificare per misura se `granite4:32b-a9b-h` entra nella 3090.
+- **Fatto**:
+  - **Compito 2 completato**: misura di capacità archiviata come
+    `docs/runs/20260827-1115-envw-c424928-vram32b.md`, grezzi in
+    `~/NORTHSTREAM-archive/20260827-1115-envw-c424928-vram32b/`. Esito: **entra**,
+    **100% GPU**, picco **19 788 MiB su 24 576**, margine 4,7 GiB, contesto 32k
+    preallocato, latenza 101 s a freddo e 1-3 s a caldo.
+  - **Compito 1 non eseguito**: bloccato da due difetti trovati per strada (sotto).
+  - Rimosso `wap-northstream-lab_kafka_data` **dopo** aver raccolto le prove e su via
+    libera esplicita della supervisione.
+- **Decisioni prese**:
+  - **La prima misura del 32b è stata scartata e archiviata come falsa**, non corretta in
+    silenzio. Dava `100% CPU`, VRAM 9 MiB, latenza 29 s — cioè la risposta che l'ipotesi
+    si aspettava («19 GB non entrano in 24») — ma era un artefatto: il container Ollama
+    era stato ricreato senza passthrough GPU da un mio `docker compose up -d` privo
+    dell'override `--gpu`. Il log grezzo resta in archivio come `inferenza-cpu-invalida.log`.
+    *Motivo di merito*: l'artefatto confermava l'ipotesi attesa, ed è la circostanza in cui
+    una misura sbagliata ha meno probabilità di essere controllata.
+  - **Aggiunto al report un controllo minimo pre-misura GPU** (`DeviceRequests` non null,
+    `inference compute` che dice `library=CUDA`), perché la stessa trappola non si ripeta.
+  - **Le prove sul difetto Kafka sono state raccolte prima di cancellare il volume**, su
+    indicazione della supervisione. Cancellare e riprovare avrebbe reso il run verde e
+    fatto sparire il finding.
+- **Test eseguiti**:
+  - `gh workflow run ci-nightly.yml --ref release/v0.0.2 -f suite=full` → run
+    **33061800518**, **fallito in 10 s** allo step `actions/checkout`:
+    `EACCES: permission denied, rmdir '.../trino/catalog'`. La directory è `root:root`,
+    creata da Docker (bind-mount di `./trino/catalog`, finding **P-2**) durante la
+    nightly delle 08:58. **Conseguenza**: la prima nightly su un workspace pulito funziona,
+    **tutte le successive falliscono**. Non rimossa: `sudo rm`/`sudo rmdir` sono negati a
+    questa sessione.
+  - **Difetto di migrazione su Kafka, verificato per misura** (v. "Non funziona"):
+    con volume `kafka_data` preesistente il broker va in crash-loop
+    (`java.nio.file.AccessDeniedException: /var/lib/kafka/data/bootstrap.checkpoint.tmp`,
+    46 restart); con volume fresco è **healthy in 23 s**.
+    `bitnamilegacy/kafka:3.7.1` gira `uid=1001 gid=0(root)`, `apache/kafka:4.3.1` gira
+    `uid=1000(appuser) gid=1000`; le directory del volume sono `0:0` modo `775`, cioè
+    scrivibili dal **gruppo root** — di cui il vecchio broker faceva parte e il nuovo no.
+  - Misura 32b: v. sopra e il run report.
+- **Costo della sessione**: **non misurabile** — sessione bridge, `usage` non esposto.
+- **Non funziona / sospeso**:
+  - **`ci-nightly` non è ripetibile sul runner self-hosted** finché `trino/catalog`
+    root-owned resta nel workspace. **Decisione richiesta all'owner**: eseguire
+    `sudo rmdir .../trino/catalog && sudo rmdir .../trino` (la dir è vuota), e far
+    correggere la causa — la via più pulita sembra committare `trino/catalog/.gitkeep`,
+    così Docker non crea la directory come root. Issue da aprire, sorella di #41/#42.
+  - **v0.0.2 rompe i lab esistenti**: chi aggiorna con un volume `kafka_data` creato
+    dall'immagine Bitnami trova Kafka che non parte, con un errore che non nomina né i
+    permessi né il cambio d'immagine. La CI **non può accorgersene per costruzione**,
+    perché parte sempre da volume inesistente. **Decisione richiesta all'owner**: nota di
+    migrazione nel CHANGELOG/README, oppure controllo esplicito all'avvio. Osservazione a
+    supporto della seconda via: la nota la legge chi sospetta già un problema di
+    aggiornamento; chi non lo sospetta vede solo un broker che non parte.
+  - **Finestra esclusiva spesa in buona parte a debuggare**, che è il rischio contro cui
+    la §2.1 appena scritta mette in guardia: due difetti di infrastruttura, più ~35 minuti
+    persi per un mio errore (un `docker compose up -d` senza override GPU che ha ucciso il
+    pull al 92% e poi tolto la GPU a Ollama). La prova a secco prescritta dalla regola 2
+    di §2.1, se fosse esistita per la nightly, avrebbe intercettato il primo dei due.
+- **Prossimo passo per la sessione successiva**: sbloccare `trino/catalog` e rieseguire
+  la suite `full` contro l'head — **T0.6 con modelli veri resta non misurato**, e con esso
+  il progression test della release.

@@ -463,3 +463,99 @@ e stato pipeline nel manifest del soak (stessa collocazione, anticipo di #44)
   GPU/RAM/load per-campione — gli resta solo il pre-check che blocca un run
   e la classificazione automatica.
 - **Decisioni richieste all'owner**: nessuna.
+
+---
+
+## Sessione ENV-W (Z8) — 28/08/2026, ~12:10Z — chiusura e archiviazione del soak `20260827-1406-envw-c6b56d3`
+
+- **Ruolo**: host di verifica. Nessun codice committato: solo report di run,
+  questa entry, e l'annotazione a un report esistente.
+- **Contesto**: le sessioni si sono fermate la sera del 27/08 per esaurimento
+  dei crediti settimanali, con il soak in corso e nulla pushato. Il limite si
+  è azzerato alle 12:00Z del 28/08. **Il campionatore girava distaccato
+  (PPID 1) e non dipendeva dalla sessione**: ha raggiunto la sua fine
+  prevista alle 21:29:44Z contro un `planned_end` di 21:30:00Z. Sette ore di
+  misura sopravvissute a due cadute di sessione perché l'avvio era
+  distaccato e il formato append-only con `flush`+`fsync` per riga. È una
+  proprietà di progetto dell'harness, non fortuna, e va tenuta.
+- **Priorità eseguita nell'ordine prescritto**: verifica integrità →
+  archiviazione verificata → verdetto → report. **Niente è stato spento,
+  riavviato o toccato prima che la copia fosse verificata.**
+- **Integrità dei grezzi** (verificata *prima* di qualsiasi altra operazione):
+  427 righe, tutte JSON valido, `seq` contigui 0…426, nessun
+  `postgres.error` né `qdrant.error`, nessun campione con `warnings` non
+  vuoti. `soak.err.log` a 0 byte — verificato **due volte e per vie
+  indipendenti**: `wc -c` = 0 e SHA256 = `e3b0c442…852b855`, che è l'hash
+  del file vuoto.
+- **Archiviazione**: `~/NORTHSTREAM-archive/20260827-1406-envw-c6b56d3/` con
+  `SHA256SUMS`. Copia verificata con `sha256sum -c` contro gli hash
+  calcolati sull'origine *prima* della copia: 3 file su 3 `OK`.
+- **Verdetto §4.3** (`bench/soak/verdict.py`, output integrale nel report):
+  - (a) crescita Qdrant → **WARN**, atteso: 1943→10 296 punti (+8 353,
+    1 131/h), monotòna, nessuna retention — è A-3, aperto fino a v0.0.4.
+  - (b) slot di replica → **UNKNOWN** per soglia non dichiarata; tendenza
+    piatta, WAL trattenuto **max 0,060 MiB** su 7,4 h di generatore attivo.
+  - (c) eventi persi → **OK**: DB +8 352, Qdrant +8 353; divario assoluto
+    **94/94/96** (min/mediana/max) su 427 campioni.
+  - (d) RSS vs tier → **UNKNOWN** per tetto non dichiarato; picco 15 985 MiB
+    su 19 container.
+- **Le due `UNKNOWN` sono il verdetto corretto, non un buco.** Il piano non
+  dichiara né una soglia per lo slot né un tetto RSS per lo stack full:
+  l'unico tetto scritto è quello di `core` (≤ 14 GB, T-PROF, v0.0.3, e su
+  ENV-L). *Alternativa scartata*: passare una soglia inventata da riga di
+  comando per ottenere un `OK`/`WARN` — scartata perché avrebbe prodotto un
+  verdetto senza referente nel piano, cioè un numero verde che non risponde
+  a nessuna domanda.
+- **Il ritrovamento del run — la misura "prima" di P-5, ottenuta a costo zero**
+  da campioni raccolti per altro: RSS totale **12 376 MiB al primo campione
+  (a freddo) → 15 174 mediana → 15 985 picco**. **Trino passa da 4 109 a
+  7 119 MiB in 7,4 ore** (+73%) e da solo spiega 3 010 dei 3 571 MiB di
+  crescita dello stack, mentre Elasticsearch (1 712→1 719, l'unico con
+  `-Xmx` fisso nel compose) e Kafka (960→978) restano piatti. È P-5 visto
+  in diretta: una JVM senza tetto su 256 GB dimensiona l'heap su una
+  frazione della RAM di sistema e poi lo riempie. **Vale come termine di
+  paragone "prima" contro un "dopo" sulla stessa macchina, non come valore
+  di tier** — piano §143: le misure di RAM su ENV-W non sono trasferibili
+  ai tier, sono un limite superiore.
+- **Annotazione a `docs/runs/20260826-2053-envw-5eb456a-baseline.md`**
+  (**annotato, non riscritto**): i **9,52 GiB** di quel report sono una
+  **lettura a freddo di una grandezza che cresce**. Nella sua tabella Trino
+  compare a 1 067 MiB — lo stesso servizio nel suo istante più freddo. Gli
+  esiti dei test di quel run restano validi e il numero non è sbagliato:
+  cambia solo che cosa se ne può concludere.
+- **Slot `active: true` in 427 campioni su 427**, con `warnings` sempre
+  vuoto. Chiude in positivo la storia del 27/08, quando il campionatore
+  riportava `inactive` ovunque per un difetto di parsing (`active == "t"`
+  contro un Postgres che rende il booleano come `true`), corretto in
+  `2b4f4ad`.
+- **Il divario costante a ~95** fra contatore DB e punti Qdrant è **rumore
+  di campionamento fra due letture non atomiche**, non un tasso di perdita:
+  se si perdessero eventi il divario crescerebbe, e su 7,4 h non cresce
+  (94 → 94 → 96).
+- **La domanda "l'agent ha smesso di indicizzare?" ha risposta: no,
+  fisiologico.** VRAM con mediana *e* p95 entrambi a 362 MiB, solo 5
+  campioni su 427 (1,2%) sopra 1 GiB — ma nello stesso arco Qdrant è
+  cresciuto di 8 353 punti a ritmo costante. L'ingest usa il modello di
+  embedding piccolo; il footprint grosso appare con la chat (~6,5 GiB) e con
+  il 32b in EVAL (19,8 GiB).
+- **Esclusività confermata per misura**: nessun processo di calcolo estraneo
+  sulla GPU in nessuno dei 427 campioni; l'unico consumatore è il nostro
+  `llama-server`.
+- **Stato della macchina al 28/08 12:10Z** (rilevato, non modificato): GPU a
+  362 MiB / 24 576, 0% util, unico processo `llama-server` — **nessun tenant
+  vast.ai rientrato**. Stack full **ancora in piedi**, 19 container, uptime
+  24 h, nulla caduto nella notte; `debezium-connect` a 22 h perché riavviato
+  a mano durante la verifica del campionatore del 27/08.
+- **Non fatto, e perché**: T0.7, verifica di #44, T-PROF e il **secondo soak
+  ("dopo" di P-5") non sono stati eseguiti.** La finestra esclusiva di 12 h è
+  scaduta alle ~08:15Z del 28/08 e **va richiesta di nuovo all'owner**:
+  lanciare il secondo soak di iniziativa significherebbe occupare la
+  macchina per 8 ore senza garanzia. Nessuna nightly innescata di
+  iniziativa, per lo stesso motivo.
+- **Limite dichiarato del confronto che verrà**: `mem_limit` (#21) e
+  `jvm.config` (#22) cambiano **insieme**. Un "dopo" piatto proverà
+  l'intervento **combinato**, non quale delle due metà lo produce. Se serve
+  attribuirlo, servono due run.
+- **Costo della sessione**: **non misurabile** (sessione bridge).
+- **Decisioni richieste all'owner**: una — se e quando concedere una nuova
+  finestra esclusiva per il secondo soak (~8 h) e per le tre misure rimaste.

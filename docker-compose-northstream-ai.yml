@@ -387,7 +387,13 @@ services:
     image: ghcr.io/open-webui/open-webui:v0.11.1@sha256:6bb1fbe8ab0a3e0456067f493044ffb66a30a65a34be47f6a5862176a370dd16
     container_name: northstream-open-webui
     restart: unless-stopped
-    mem_limit: 512m
+    # 512m put this container in a crashloop: RestartCount climbed 134 -> 142
+    # in forty seconds on ENV-W and Health never once reached healthy, while
+    # `docker stats` showed a low, sawtoothing 265 MiB average -- an undersized
+    # cap reads as low memory use, not high. Measured footprint once it can
+    # actually start: 679.7 MiB here, 687 MiB on the uncapped stack of soak #1.
+    # 1 GiB leaves ~1.5x over both readings (T-PROF, 2026-08-28).
+    mem_limit: 1024m
     ports:
       - "127.0.0.1:3000:8080"
     environment:

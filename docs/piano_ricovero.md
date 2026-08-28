@@ -305,6 +305,33 @@ sopra il comportamento sano e intercetta uno slot bloccato molto prima che il di
 ne risenta. Il primo soak, riletto con questo criterio, sarebbe **OK**: 427 campioni
 su 427 con `active` vero, tendenza piatta.
 
+**(a) Crescita dei punti Qdrant.** Il verdetto scritto nell'harness — `plateaued =
+any(points[i] <= points[i-1])`, OK se vero — **non può fallire**: un solo campione non
+crescente in tutta la corsa tinge di verde l'intero check. Dimostrato sui 427 campioni
+del soak #1 cambiando una riga: il verdetto passa da WARN a OK mentre la riga di
+dettaglio continua a stampare `+8353, 1130.9/h`, cioè si contraddice da sé. Il caso
+peggiore è però quello osservato **dal vivo** durante il soak #2: il conteggio è piatto
+**perché i dati vengono distrutti** (A-3 ha resettato il contatore di point-id e l'agent
+sta riscrivendo sopra il corpus esistente), e il check lo legge come "crescita limitata".
+Retention che funziona, sovrascrittura, pipeline morta e crescita illimitata con un
+singolo singhiozzo sono oggi **indistinguibili**, e tutte e quattro danno OK.
+
+Il conteggio dei punti **da solo non basta**: (a) deve leggere anche il flusso di eventi
+in ingresso, cioè lo stesso dato che alimenta (c). Un conteggio piatto significa una cosa
+se non entra niente e l'opposto se entrano mille eventi l'ora.
+
+| Condizione | Verdetto |
+|---|---|
+| Retention **configurata**: conteggio entro il target dichiarato e pendenza ≈ 0 sulla seconda metà del run | OK |
+| Conteggio piatto o calante **mentre** gli eventi nel DB crescono | **FAIL** — sovrascrittura o perdita di dati, il caso più grave, non il più tranquillo |
+| Retention configurata ma conteggio in crescita non limitata | FAIL |
+| **Nessuna retention configurata** (stato di oggi, A-3) | **WARN — atteso, mai OK** |
+
+L'ultima riga è deliberata: finché A-3 non è chiuso non esiste una retention, quindi
+non esiste una condizione che (a) possa legittimamente dichiarare OK. Un check che non
+può dare verde finché il difetto è aperto è un check onesto; uno che dà verde perché la
+serie è piatta è una decorazione.
+
 **(d) RSS totale.** Il tetto non è una costante: è **la somma dei `mem_limit`
 dichiarati nel compose** per i servizi del profilo in esame. Scritto così si
 aggiorna da solo quando il compose cambia, non richiede di ricordarsi di
@@ -315,7 +342,27 @@ se lo stack sta dentro ciò che dichiara di volere.
 |---|---|
 | RSS totale ≤ somma dei `mem_limit` del profilo, **e** nessun servizio oltre il 90% del proprio `mem_limit` per ≥ 10 campioni consecutivi | OK |
 | Tetto complessivo superato, o un servizio incollato al proprio tetto | FAIL |
-| Uno o più servizi del profilo **senza** `mem_limit` | UNKNOWN — il tetto del profilo non è definito |
+| Uno o più servizi del profilo senza `mem_limit` **e senza esenzione dichiarata** | UNKNOWN — il tetto del profilo non è definito |
+
+**Esenzioni dichiarate** (correzione del 28/08, dopo T-PROF). La riga UNKNOWN qui
+sopra, presa alla lettera, rende (d) **inutile**: `ollama` non ha `mem_limit` per
+scelta deliberata — quanto gli serve lo decide il modello caricato, non il compose —
+e sta in ogni profilo, quindi (d) sarebbe UNKNOWN per sempre. È un difetto della
+regola, non della misura, ed è emerso perché la sessione ENV-W l'ha applicata alla
+lettera invece di aggirarla: la risposta giusta a una regola che degenera è
+correggerla, non ignorarla.
+
+Un servizio è **esente** se il compose dichiara l'assenza del tetto con un commento
+che ne spiega il motivo (oggi solo `ollama`). Con le esenzioni, (d) diventa:
+
+- il totale dei servizi **con** tetto sta dentro la somma dei loro `mem_limit`, **e**
+- nessuno di essi supera il 90% del proprio tetto per ≥ 10 campioni consecutivi, **e**
+- l'RSS di ogni servizio esente è **riportato a parte** nel report, con il suo valore
+  misurato, così che non sparisca dal conto pur non avendo un tetto contro cui fallire.
+
+Un'esenzione non dichiarata nel compose resta UNKNOWN: la differenza fra "non ha un
+tetto perché abbiamo deciso così" e "non ha un tetto perché ce ne siamo dimenticati"
+è esattamente ciò che (d) deve saper distinguere.
 
 La seconda condizione conta quanto la prima: un servizio che vive al 95% del proprio
 tetto non ha ancora fallito, ma è a un picco di distanza dall'OOM killer, e un soak

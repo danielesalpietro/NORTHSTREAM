@@ -125,6 +125,18 @@ Il payload dei punti Qdrant è `{"text", "topic"}`: nessun timestamp filtrabile.
 **A-3 [MAJOR] — ID dei punti: contatore in RAM contro storage persistente = collisioni garantite.**
 `_point_id` riparte da 0 a ogni riavvio del container, mentre `qdrant_data` è un volume persistente: al secondo avvio l'upsert **sovrascrive** i punti 1..N della sessione precedente mescolando vecchio e nuovo. Insieme ad A-2 produce uno stato del vector store non ricostruibile. Fix elegante e idempotente: id deterministico da `(topic, partition, offset)` — replay sicuri gratis; alternativa banale: `uuid4` (ma perde l'idempotenza). Contestualmente: crescita senza TTL né cleanup (~29k punti/giorno a un evento/3s), e `qdrant.search()` è deprecato in qdrant-client 1.11 a favore di `query_points`.
 
+> **Osservato in produzione il 28/08, e la prima spiegazione era sbagliata.** Durante
+> il soak #2 il conteggio dei punti Qdrant risultava **fermo**. L'ipotesi immediata —
+> "l'agent è bloccato" — era falsa: l'agent lavora, e **sovrascrive**. Prova diretta:
+> il punto `id=3` porta un evento delle **13:41:55Z di oggi**, mentre `id=27413` ne
+> porta ancora uno delle **12:31Z** — il contatore è ripartito da zero e sta risalendo
+> sopra il corpus esistente. Non è "crescita illimitata": è **distruzione silenziosa
+> di dati**, e si presenta con la faccia più rassicurante possibile, un conteggio
+> piatto. Conseguenza sul piano: il check (a) del soak non può dichiarare OK su una
+> serie piatta senza guardare il flusso in ingresso (`docs/piano_ricovero.md` §4.3.1),
+> e A-3 sale di priorità dentro v0.0.4 — non è igiene dello storage, è integrità del
+> corpus su cui il RAG risponde.
+
 **A-4 [MAJOR] — Embedding sincrono nel hot path del consumer, in contesa con la generazione.**
 Ogni evento = una chiamata HTTP bloccante a Ollama (timeout 30 s) dentro il loop del consumer. Ollama serve *anche* le generazioni di `/compare` (fino a 120 s) sulla stessa istanza: durante una risposta il thread consumer si accoda o va in timeout, e l'evento viene **perso per sempre** con un `print` ("embedding/upsert failed") — niente retry, niente coda, e con `auto_offset_reset="latest"` senza `group_id` niente possibilità di recupero. Al ritmo attuale (un evento ogni ~3 s) il difetto è latente; alzare `INTERVAL_SECONDS` o fare più domande in parallelo durante un workshop lo rende visibile. Un buffer interno con embedding batch fuori dal loop di consumo sarebbe coerente con la taglia del progetto.
 

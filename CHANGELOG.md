@@ -68,6 +68,16 @@ numeri misurati (T-PROF, [#23](https://github.com/danielesalpietro/NORTHSTREAM/i
   fallirebbe come un OOM-kill silenzioso, non come un errore leggibile.
 
 ### Fixed
+- `docker-compose-northstream-ai.yml`: `open-webui` passa da `mem_limit: 512m` a
+  **`1024m`**. Il tetto stimato di [#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21)
+  stava **sotto il footprint misurato** e teneva il container in **crashloop**:
+  `RestartCount` da 134 a 142 in quaranta secondi su ENV-W, `Health` mai una volta
+  `healthy`. Il sintomo era ingannevole — `docker stats` mostrava una media **bassa**
+  di 265 MiB a dente di sega, perché **un tetto troppo stretto si legge come poco
+  consumo, non come troppo**. Footprint reale una volta che il container parte:
+  679,7 MiB (T-PROF) e 687 MiB sullo stack senza tetti del soak #1; 1 GiB lascia
+  ~1,5× su entrambe le letture (**P-5**, [#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21)).
+
 - `bench/t0/tests/t0.07_trino_catalog.sh` — l'asserzione sul conteggio non
   poteva fallire. Il comando univa stderr a stdout (`2>&1`) e ricavava il
   numero da `head -1 | tr -dc '0-9'`: la prima riga è il WARNING di jline del

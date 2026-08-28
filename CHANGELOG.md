@@ -68,6 +68,17 @@ numeri misurati (T-PROF, [#23](https://github.com/danielesalpietro/NORTHSTREAM/i
   fallirebbe come un OOM-kill silenzioso, non come un errore leggibile.
 
 ### Fixed
+- `bench/t0/tests/t0.07_trino_catalog.sh` — l'asserzione sul conteggio non
+  poteva fallire. Il comando univa stderr a stdout (`2>&1`) e ricavava il
+  numero da `head -1 | tr -dc '0-9'`: la prima riga è il WARNING di jline del
+  CLI Trino, e il suo timestamp sopravvive allo strip come un intero positivo
+  grande. Una query che restituiva **0 righe** veniva quindi valutata **OK** —
+  dimostrato su ENV-W il 28/08. Ora stderr resta fuori dal valore (riportato
+  come osservazione, non parsato) e si accetta **solo** una riga che sia un
+  intero puro dopo aver tolto le virgolette del CLI, esattamente una. Il
+  merito del ritrovamento è della sessione ENV-W, che ha dichiarato il difetto
+  invece di appoggiarsi al verde (**P-2**, [#22](https://github.com/danielesalpietro/NORTHSTREAM/issues/22)).
+
 - `docker-compose-northstream-ai.yml`: `kafka-ui` dipendeva
   (`depends_on: schema-registry: condition: service_started`) da un servizio
   ora tag `lakehouse`. Compose rifiuta un servizio sempre-attivo che dipende

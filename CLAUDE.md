@@ -191,6 +191,15 @@ grezzi in `~/NORTHSTREAM-archive/<RUN_ID>/` — mai nel repo.
   derivato deve poter distinguere "falso" da "non l'ho potuto sapere"** — `null` con
   un errore popolato, mai un booleano che collassa in silenzio. Una costante
   travestita da misura è peggio di un campo assente: il campo assente si nota.
+  **Terzo caso, 28/08**: T0.7 è stato dichiarato PASS da un'asserzione che **non
+  poteva fallire** — univa stderr a stdout e ricavava il conteggio con
+  `head -1 | tr -dc '0-9'`, cioè dal timestamp di un WARNING. Una query che
+  restituiva 0 righe veniva valutata OK. Il verde era vero nella sostanza (Trino
+  interrogava davvero Postgres) e falso come garanzia, che è il modo peggiore:
+  un test così non protegge da nulla e nessuno se ne accorge finché regge. Da
+  qui la regola operativa: **un test nuovo va falsificato prima di essere
+  creduto** — si rompe di proposito la condizione che asserisce e si verifica
+  che diventi rosso. Un test mai visto fallire non è un test, è una decorazione.
 - **Le anomalie si scrivono quando si incontrano, non alla chiusura.** Una sessione
   bridge (ENV-W) che tiene un errore solo nel proprio terminale lo rende invisibile
   alla supervisione: il canale è a senso unico, e ciò che non finisce in un commit

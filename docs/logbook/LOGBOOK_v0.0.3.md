@@ -536,3 +536,92 @@ partire dal numero di campioni deve tenerne conto.
 - **Decisioni richieste all'owner**: nessuna bloccante. Da sapere: la finestra
   ENV-W corrente scade alle ~22:00Z del 28/08; se il soak #2 parte dopo le
   ~16:00Z servirà o una coda più corta o un'estensione.
+
+---
+
+## Sessione ENV-W (Z8) — 28/08/2026, 12:31–12:55Z — T0.7, #44 a tre stati, suite completa su hardware reale
+
+- **Ruolo**: host di verifica. Unica modifica al repo oltre a report e
+  logbook: `bench/t0/expected/current.json`, `T0.7: XFAIL → PASS`.
+- **Stack ricreato da zero** (12:31:43→12:34:35Z): quello in esecuzione era
+  partito il 27/08 alle 14:06, **prima** dei commit di configurazione di
+  v0.0.3 — era il vecchio Trino senza `jvm.config` né `mem_limit`, e
+  qualunque misura presa lì avrebbe descritto un sistema che non è quello
+  della release. **Teardown senza `-v`**: otto volumi di stato superstiti,
+  `ollama_data` compreso (P-10/#42).
+- **Tre precondizioni verificate prima di prendere qualunque numero**, perché
+  ognuna ha già prodotto una misura falsa: `DeviceRequests` non `null` (GPU
+  davvero passata — il 27/08 un `up -d` senza override l'aveva tolta in
+  silenzio producendo un falso "100% CPU"); `-Xmx2G` davvero montata in
+  `/etc/trino/jvm.config`; `postgresql.properties` davvero in
+  `/etc/trino/catalog`.
+- **T0.7 → PASS, e l'attesa è stata flippata.** Ma **il test ha un difetto e
+  il flip non poggia su di lui**: T0.7 riporta `282026124836 rows`, che non
+  è un conteggio — è la data della riga di WARNING di jline con i non-cifre
+  rimossi. Il test fa `head -1` sull'output di `trino --execute` (prendendo
+  il WARNING) e poi `tr -dc '0-9'`: **la riga del conteggio non viene mai
+  letta**. *Controprova decisiva*: con
+  `SELECT count(*) ... WHERE 1=0`, che restituisce `"0"`, il test estrae
+  `282026123512` e **passerebbe con un conteggio di zero**. La prima
+  asserzione (`grep '"postgresql"'` su `SHOW CATALOGS`) è invece reale.
+  La sostanza l'ho misurata a mano: `psql` 13 754 contro Trino 13 755 allo
+  stesso istante, generatore attivo — **la metà Trino di P-2 è chiusa**.
+  Da aprire come issue: la correzione è di una riga (ultima riga invece della
+  prima, e pretendere la forma `"<cifre>"`), ma è codice di test e non la
+  scrivo io.
+- **#44 verificato su hardware reale, tre stati più il caso non misurabile.**
+  Precondizione voluta: Ollama scaldato di proposito, così che lo stato A
+  verificasse l'**attribuzione** di due processi reali (entrambi risolti al
+  cgroup di `northstream-ollama`) e non il caso banale a zero processi.
+  A libera → `exclusive`; B con un container CUDA **senza** il label di
+  progetto e 1,5 GiB allocati → `shared`, `foreign_used_mib: 1896`;
+  C risanata → `exclusive`, il terzo pid sparito.
+  **Il caso `unknown` è stato provato nel modo scomodo**: `nvidia-smi`
+  nascosto **mentre la contesa era realmente in corso**. Risposta `unknown`
+  con tutti i campi `null` e *"not evidence of contention"* — non `shared`.
+  Un modulo che collassasse "non lo so" su "condiviso" avrebbe dato la
+  risposta giusta per caso.
+  Cancello: `--require-vram-mib 20000` sotto contesa → **FAIL exit 1**;
+  `+ --allow-contention` → WARN exit 0; soglia 8000 che ci sta → WARN exit 0;
+  nessuna soglia → WARN "reporting only". Tutti e quattro discriminano.
+- **Auto-correzione registrata**: il primo tentativo di nascondere
+  `nvidia-smi` era `PATH=/usr/bin:/bin` — ma `nvidia-smi` **sta** in
+  `/usr/bin`. Il modulo rispose `shared`: la risposta giusta a una domanda
+  che non avevo posto. Me ne sono accorto solo perché avevo stampato
+  `nvidia-smi visibile? -> …` accanto al risultato. Rifatto con un PATH
+  sandbox di soli symlink.
+- **Suite completa, due esecuzioni consecutive** (12:40Z e 12:47Z):
+  `{"PASS": 9, "XFAIL": 3, "XPASS": 1}`, `RESULT: OK (no regression)`.
+- **Il reperto della giornata sui test**: **T0.10 dà XPASS alle 12:40 e
+  XFAIL alle 12:47** — stesso stack, stessa SHA, sette minuti di distanza.
+  È **#40 colta in flagrante**, ed è la prima osservazione *diretta* della
+  sua non-determinatezza: prima era un'inferenza. Un XPASS di T0.10 non va
+  mai letto come "A-1 risolto".
+- **T0.9 in XPASS su entrambi i run** (323 s e 321 s), atteso XFAIL fino a
+  v0.0.4 per A-2. Due osservazioni concordi sono più di quanto avessi per
+  T0.10, ma **non bastano**: resta da stabilire se il test discrimini in
+  queste condizioni o se lo stato del corpus lo renda vero per costruzione.
+  **Attesa di T0.9 non toccata** — è una decisione di analisi, non
+  un'esecuzione, e non è mia. Lasciata come reperto.
+- **Nota di igiene**: la prima esecuzione porta il tag `envx` perché avevo
+  omesso `NS_ENV`; è il default documentato in `run.sh`, non un difetto.
+  Rieseguita con `--env envw`, ed è servita a qualcosa: senza la seconda
+  osservazione, l'instabilità di T0.10 non sarebbe emersa.
+- **Domanda dell'owner sulla VRAM, risposta dai 427 campioni archiviati**:
+  mediana **e** p90 **e** p95 tutti a **362 MiB**, p99 1 649, max 2 671;
+  sopra 1 GiB solo 5 campioni su 427 (**~5,2 minuti su 7,4 ore**). È un
+  **footprint stazionario con picchi brevi, non 6,5 GiB sostenuti** — ma
+  durante quel soak **non c'è stata chat**: quello è il costo del solo
+  ingest. Con la chat la coppia `granite4:1b`+`granite-embedding:30m` occupa
+  **6 489 MiB** (misurato oggi), e il 32b in EVAL **19 788 MiB** (27/08). I
+  tre numeri sono lontanissimi: la scelta della scheda dipende da quale dei
+  tre usi si vuole coprire, e non è una domanda a cui un numero solo risponda.
+- **Grezzi**: `~/NORTHSTREAM-archive/20260828-1247-envw-9e71cd5/`,
+  `SHA256SUMS` verificato, incluse le evidenze integrali di #44 e la
+  controprova del difetto di T0.7.
+- **Costo della sessione**: **non misurabile** (sessione bridge).
+- **Prossimo passo**: T-PROF parte 1 (profilo `core` da freddo, con il minuto
+  di lettura dichiarato), poi il soak #2 con tutti e tre i profili.
+- **Decisioni richieste all'owner**: nessuna. Due issue da aprire a chi
+  possiede `bench/`: il difetto di estrazione di T0.7, e l'analisi dell'XPASS
+  di T0.9.

@@ -625,3 +625,106 @@ partire dal numero di campioni deve tenerne conto.
 - **Decisioni richieste all'owner**: nessuna. Due issue da aprire a chi
   possiede `bench/`: il difetto di estrazione di T0.7, e l'analisi dell'XPASS
   di T0.9.
+
+---
+
+## Sessione ENV-W (Z8) — 28/08/2026, 13:05–16:10Z — T-PROF, un servizio in crashloop, e A-3 colto in produzione
+
+- **Ruolo**: host di verifica. Nessun codice committato: report, questa entry,
+  e l'annotazione al report di stamattina.
+- **Falsificata la correzione di T0.7 (`acc0154`) prima di crederle**, che è
+  la regola nuova di CLAUDE.md §5: query reale → **OK con 15477**, identico a
+  `psql` allo stesso istante; `WHERE 1=0` → **KO exit 1**, e riporta lo zero
+  vero; tabella inesistente → **KO exit 1**, con l'errore di Trino leggibile
+  nell'osservazione invece che inghiottito. Le copie di falsificazione
+  differivano dal test vero **per la sola riga della query** (verificato con
+  `diff`) e sono state rimosse. **La correzione regge**: da adesso il verde di
+  T0.7 vale come garanzia e non solo come descrizione.
+- **T-PROF parte 1, profilo `core`, avvio a freddo 13:05:00Z**, 24 campioni a
+  60 s con `docker stats` — **la stessa metrica del campionatore del soak**,
+  così i numeri si confrontano senza conversioni. Minuto di lettura dichiarato
+  per ogni cifra, curva completa nei grezzi.
+  **Totale a regime (min 16–23): 2 636 MiB grezzi; 2 344 MiB al netto di
+  `open-webui`; 3 023 MiB = 2,95 GiB contando `open-webui` al suo valore
+  reale.** Il criterio del piano è ≤ 14 GB: **soddisfatto con oltre 4× di
+  margine.** Contro la somma dei `mem_limit` di `core` (5 952 MiB) sta
+  comunque dentro; il verdetto formale di §4.3.1(d) resta però `UNKNOWN` per
+  la questione `ollama` senza tetto, già segnalata.
+- **Il difetto che la misura ha scoperto: `open-webui` è in crashloop sotto il
+  `mem_limit` di #21.** Il totale del profilo oscillava fra 2 356 e 2 936 MiB;
+  cercando quale servizio "respirasse", uno solo aveva ampiezza fuori scala
+  (**29 → 505 MiB** su un tetto di 512, contro sette servizi su undici che
+  variano meno di 5 MiB). Non era garbage collection: **`RestartCount` da 134
+  a 142 in 40 secondi**, un riavvio ogni ~10 s, `Health` mai arrivata a
+  `healthy`, log sempre fermi allo stesso punto. **`docker ps` lo nasconde**:
+  mostra sempre `Up N seconds (health: starting)`.
+- **Controprova in entrambe le direzioni**, solo a runtime con `docker update`,
+  **senza toccare il repo**: alzato a 1 GiB → i riavvii si fermano di colpo
+  (146 → 146 in 150 s), `Health` diventa **`healthy` per la prima volta**, e la
+  memoria si assesta a **679,7 MiB**; rimesso a 512 MiB → **il difetto torna**
+  (`RestartCount=147`, `Health=starting`). Confermato anche sullo stack pieno.
+  **Il dato che chiude il cerchio**: nel soak #1, stack *senza* tetti, 427
+  campioni su 7,4 h, `open-webui` stava a **687 MiB** — mediana, primo e ultimo
+  campione tutti 687. **Il tetto di #21 è 512, sotto un fabbisogno già
+  misurato.** Il numero da usare è ~680 MiB più margine; non lo correggo io.
+- **Perché conta oltre a sé stesso**: #21 mette i tetti per rendere lo stack
+  onesto sulle risorse. Un tetto sotto il fabbisogno reale non lo rende onesto,
+  **lo rompe** — e in un modo che nessun test T0 interroga e che la nightly non
+  vedrebbe, perché nessuno guarda `RestartCount` e un container che riparte
+  ogni 10 s è "Up" ogni volta che lo si guarda. È saltato fuori solo perché
+  T-PROF campiona la memoria **nel tempo** invece di leggerla una volta.
+- **Soak #2 lanciato** alle 13:42:42Z, `20260828-1342-envw-7f9e5a9`,
+  **PPID 1** (distaccato, la lezione di ieri), stack **pieno con tutti e tre i
+  profili** (19 container — con solo `core` avrei confrontato 11 container con
+  19 e la differenza sarebbe stata dominata da quelli mancanti), cadenza 60 s,
+  **durata identica al soak #1** (26 610 s), `--exclusivity exclusive` e
+  `initial_conditions` **nativi** nel manifest: niente più annotazioni a mano.
+  Fine prevista **21:06:12Z**.
+- **A metà run, il segnale P-5 è già leggibile**: **Trino 981 → 1473 MiB**
+  in 2h20 con i tetti, contro **4 109 → 7 119 MiB (+73 %)** senza. Verdetto
+  solo a fine run, ma la direzione è quella attesa.
+- **Anomalia trovata a metà soak, e la prima ipotesi era sbagliata.** Qdrant
+  fermo a 27 414 punti **dal primo campione**, divario col DB da 1 057 a
+  3 609 (nel soak #1 era costante a ~95), agent che logga
+  `embedding/upsert failed: timed out` 64 volte su 70 righe, `/health` che dice
+  comunque `ok` con `buffered_events: 500` — che è **A-5/T0.11 visto in
+  produzione**. Sembrava pipeline morta. **Non lo era.**
+  Verificate le dipendenze una per una: Qdrant `green`, risposta in 1,6 ms,
+  upsert diretto **completed in 26 ms**; Ollama 9–21 ms a regime; e **da dentro
+  il container dell'agent, con l'endpoint esatto che l'agent usa**
+  (`/api/embeddings` legacy con `prompt`), **http=200 in 0,010 s**. Nessun
+  limite di CPU, memoria al 19 % del tetto, `RestartCount=0`.
+- **La causa vera: l'agent non è fermo, sovrascrive.** `_point_id = 0` a
+  livello di modulo e `id=next_point_id()` all'upsert: al riavvio del container
+  il contatore riparte da zero e riscrive sopra i punti esistenti.
+  **Prova al livello del singolo punto**: `id=3` porta un evento di **oggi
+  13:41:55Z**, `id=7` di 13:42:11Z, `id=40` di 13:43:09Z — cioè scritti
+  all'avvio dello stack — mentre `id=27000` e `id=27413` portano ancora eventi
+  di **stamattina** (12:10Z e 12:31Z). Il contatore è ripartito da 0 e sta
+  risalendo sopra il corpus precedente. **È A-3 / T0.8 colto in produzione.**
+  *Perché il soak #1 non lo mostrava*: lì l'agent girava da abbastanza tempo
+  che il contatore aveva già superato l'id massimo, quindi **accodava**. Stesso
+  difetto, fase diversa del contatore.
+  I 64 `timed out` restano un intermittente separato a bassa frequenza (uno
+  ogni ~2 minuti su ~18 eventi/minuto): **non sono la causa**, perché la
+  maggioranza degli upsert riesce — ed è proprio riuscendo che sovrascrive.
+- **Conseguenza dichiarata per il soak #2**: il carico c'è ed è reale, quindi
+  il confronto P-5 col soak #1 regge; ma le verifiche (a) e (c) del verdetto
+  finale **misureranno A-3, non una perdita di eventi**, e nel report andrà
+  detto prima del numero.
+- **Igiene**: la sonda diagnostica che ho scritto in Qdrant è stata rimossa e
+  il conteggio riverificato a 27 414. Sei campioni su 133 hanno
+  `docker stats` in timeout a 30 s, registrati dal campionatore come `_error`
+  invece di produrre un totale parziale silenzioso — comportamento corretto,
+  ma i totali vanno calcolati sui 127 campioni buoni.
+- **Grezzi**: `~/NORTHSTREAM-archive/20260828-1305-envw-9e71cd5-tprof/` e
+  `~/NORTHSTREAM-archive/20260828-1342-envw-7f9e5a9/`, entrambi con
+  `SHA256SUMS` verificato.
+- **Costo della sessione**: **non misurabile** (sessione bridge).
+- **Prossimo passo**: chiusura del soak #2 alle 21:06Z, verdetto, confronto
+  delle due curve **sulla finestra comune** dichiarandolo, archiviazione
+  immediata.
+- **Decisioni richieste all'owner**: nessuna bloccante. Tre cose da assegnare a
+  chi possiede il codice: il `mem_limit` di `open-webui` (numero misurato:
+  ~680 MiB), l'eccezione di §4.3.1(d) per i servizi senza tetto, e la
+  conferma che A-3 ha ora una prova di produzione oltre a T0.8.

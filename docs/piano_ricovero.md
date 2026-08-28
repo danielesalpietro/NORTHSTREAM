@@ -279,6 +279,69 @@ Tutti i test sono script in `bench/t0/` con exit code, output JSON per-test, e n
 
 **T-SOAK-24h**: stack full 24 h con generatore attivo. Verifiche a fine run: (a) crescita punti Qdrant coerente con la retention configurata (non illimitata), (b) dimensione replication slot Postgres sotto soglia (`pg_replication_slots`), (c) zero eventi persi durante 50 `/compare` sparsi (contatore eventi DB vs buffer), (d) RSS totale per profilo dentro il tier dichiarato. Prima esecuzione sulla baseline **a scopo di misura** (i fallimenti attesi diventano i numeri "prima").
 
+#### 4.3.1 Le soglie di (b) e (d) — scritte dopo il primo soak, non prima
+
+Il soak parziale `20260827-1406-envw-c6b56d3` (427 campioni, 7,39 h) ha concluso
+**UNKNOWN** su (b) e (d), e la sessione che l'ha eseguito ha fatto la cosa giusta a
+non inventarsi una soglia da riga di comando: il piano ne dichiarava una solo per
+(a) e (c). Un verde senza referente sarebbe stato peggio di un UNKNOWN — vale la
+regola di CLAUDE.md §5 sul campo derivato che deve saper distinguere "falso" da
+"non l'ho potuto sapere". Le soglie si scrivono qui, **una volta sole**, e sono
+ancorate ai numeri già misurati.
+
+**(b) Replication slot.** Il modo di guasto vero non è una dimensione, è uno slot
+che smette di avanzare: il WAL si accumula finché il disco finisce. Serve quindi
+un criterio di *tendenza* più un tetto di sicurezza, non un tetto da solo.
+
+| Condizione | Verdetto |
+|---|---|
+| `active` vero in ≥ 99% dei campioni, **e** nessuna sequenza di ≥ 3 campioni consecutivi non-attivi, **e** WAL trattenuto max ≤ 256 MiB, **e** pendenza sulla seconda metà del run ≤ 1 MiB/h | OK |
+| Tetto o pendenza superati, o sequenza non-attiva ≥ 3 campioni | FAIL |
+| Anche un solo campione con `active` **null** (non misurabile) | UNKNOWN — e il run non può concludere OK su (b) |
+
+I 256 MiB non sono un numero di comodo: il run di riferimento ha misurato **0,060
+MiB di massimo** su 7,4 ore, quindi la soglia sta più di tre ordini di grandezza
+sopra il comportamento sano e intercetta uno slot bloccato molto prima che il disco
+ne risenta. Il primo soak, riletto con questo criterio, sarebbe **OK**: 427 campioni
+su 427 con `active` vero, tendenza piatta.
+
+**(d) RSS totale.** Il tetto non è una costante: è **la somma dei `mem_limit`
+dichiarati nel compose** per i servizi del profilo in esame. Scritto così si
+aggiorna da solo quando il compose cambia, non richiede di ricordarsi di
+riallineare un numero in un documento, e misura la cosa che davvero interessa —
+se lo stack sta dentro ciò che dichiara di volere.
+
+| Condizione | Verdetto |
+|---|---|
+| RSS totale ≤ somma dei `mem_limit` del profilo, **e** nessun servizio oltre il 90% del proprio `mem_limit` per ≥ 10 campioni consecutivi | OK |
+| Tetto complessivo superato, o un servizio incollato al proprio tetto | FAIL |
+| Uno o più servizi del profilo **senza** `mem_limit` | UNKNOWN — il tetto del profilo non è definito |
+
+La seconda condizione conta quanto la prima: un servizio che vive al 95% del proprio
+tetto non ha ancora fallito, ma è a un picco di distanza dall'OOM killer, e un soak
+che riporta solo il totale non lo vedrebbe mai.
+
+Conseguenza sul run già archiviato: il primo soak resta **UNKNOWN su (d) per
+costruzione**, perché è stato eseguito su uno stack **precedente** ai `mem_limit` di
+[#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21) — non esisteva un
+tetto contro cui misurarlo. Non è un difetto del run: è ciò che lo rende il "prima"
+di P-5. I suoi numeri — mediana 14 174 MiB, picco 15 985 MiB, di cui Trino da 4 109
+a 7 119 MiB (+73%) — sono il termine di paragone, non un fallimento.
+
+#### 4.3.2 Regola metodologica: un confronto prima/dopo varia una cosa sola
+
+Il soak "dopo" va eseguito con **la stessa composizione di stack** del "prima" — 19
+container, cioè `core` + `lakehouse` + `governance` — e stessa cadenza di
+campionamento. Dall'introduzione dei profili (O4.1) un `docker compose up` nudo
+avvia il solo `core`: un "dopo" lanciato così misurerebbe un sistema diverso, e la
+differenza osservata sarebbe dominata dai sette container che mancano invece che dai
+tetti che sono stati aggiunti. L'unica variabile che deve cambiare fra i due run è
+la configurazione sotto esame (`jvm.config` e `mem_limit`).
+
+Vale anche al contrario: la misura di T-PROF sul profilo `core` **non** è il "dopo"
+di questo soak, è un'altra misura con un altro scopo (la riga della tabella tier).
+Le due non si confrontano fra loro.
+
 ---
 
 ## 5. CI / Workflow

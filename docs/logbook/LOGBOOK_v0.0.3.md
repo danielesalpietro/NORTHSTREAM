@@ -10,14 +10,28 @@ forma compressa della fase, e alla chiusura diventa l'ESITO FASE.
 
 ---
 
-## SINTESI DI FASE — aggiornata al 2026-08-27, dopo #22/#21 (sessione C) e #44 (sessione D)
+## SINTESI DI FASE — aggiornata al 2026-08-28, finestra ENV-W in corso
 
-**Dove siamo**: #22, #21 e #44 implementati e validati **staticamente** (nessun
-demone Docker né GPU in nessuna delle due sessioni); **nessuno dei tre è
-ancora verificato a runtime**. Base: tag `v0.0.2` → `966422d` (annotato),
-`develop` allineato col merge `cfc98f3`. La Fase 1 ha chiuso P-1 nel
-comportamento (T0.6 PASS con modelli veri) e la famiglia P-11/P-12/P-13; il
-suo esito distillato è in `docs/logbook/SINTESI_fasi_chiuse.md`.
+**Dove siamo**: #22, #21 e #44 implementati e validati **staticamente** (nessuna
+delle sessioni che li ha scritti aveva Docker o GPU); **nessuno dei tre è ancora
+verificato a runtime**, ed è esattamente ciò che la finestra ENV-W aperta fino
+alle ~22:00Z del 28/08 deve chiudere, nell'ordine T0.7 → #44 → T-PROF → soak #2
+(ordine dettato dall'interferenza: #44 occupa VRAM di proposito e T-PROF cambia
+la composizione dello stack, quindi entrambe contaminerebbero la serie del soak
+se eseguite mentre gira). Base: tag `v0.0.2` → `966422d` (annotato), `develop`
+allineato col merge `cfc98f3`. La Fase 1 ha chiuso P-1 nel comportamento (T0.6
+PASS con modelli veri) e la famiglia P-11/P-12/P-13; il suo esito distillato è in
+`docs/logbook/SINTESI_fasi_chiuse.md`.
+
+**Il numero che la fase ha già prodotto**: il soak parziale
+`20260827-1406-envw-c6b56d3` (427 campioni contigui su 7,39 h, archiviato con
+checksum) è il **"prima" di P-5** — RSS mediana 14 174 → picco 15 985 MiB, di cui
+**Trino da solo 4 109 → 7 119 MiB (+73%)**, mentre Elasticsearch (`-Xmx1g` fisso)
+e Kafka restano piatti. È la prova diretta che il finding P-5 è una JVM senza
+tetto, e nessuna suite che parte e chiude in quindici minuti avrebbe potuto
+vederla. Il run ha anche mostrato che il piano non dichiarava le soglie di (b) e
+(d) del soak: scritte ora in `docs/piano_ricovero.md` §4.3.1, ancorate ai numeri
+misurati.
 
 **Scope della fase** (`docs/piano_ricovero.md` §6, riga v0.0.3 — obiettivo O4):
 smettere di mentire sulle risorse. Issue di fase
@@ -415,3 +429,110 @@ remota senza Docker/GPU. Poi #23 (tier misurati + T-PROF, ENV-L) e #24
 - **Decisioni richieste all'owner**: nessuna bloccante. Quando si pianifica
   la prossima finestra ENV-W (§2.1), includere la verifica a tre stati di
   #44 insieme a quanto già in coda (T0.7 end-to-end, i `mem_limit` di #21).
+
+---
+
+## 2026-08-28 — supervisione (sessione cloud) — soglie soak, §2, e la lezione dell'interruzione
+
+- **Obiettivo della sessione**: rimettere in moto la finestra ENV-W dopo la
+  sospensione per esaurimento crediti, e chiudere il buco che il primo soak ha
+  reso visibile — due verdetti UNKNOWN su soglie che il piano non dichiarava.
+
+- **Fatto**:
+  - `docs/piano_ricovero.md` **§4.3.1** — scritte le soglie di (b) *replication
+    slot* e (d) *RSS totale*, mancanti dal piano e causa dei due UNKNOWN del
+    primo soak. Sono ancorate ai numeri misurati, non scelte a sensazione.
+  - `docs/piano_ricovero.md` **§4.3.2** — regola metodologica: un confronto
+    prima/dopo varia una cosa sola.
+  - `CLAUDE.md` §2 — righe *Ultimo run T0*, *Prossima azione*, *Finestra ENV-W*,
+    *Sessioni operative attive*, *Blocchi aperti* riallineate. La sessione ENV-W
+    aveva giustamente **rifiutato** di aggiornare §2 dal proprio branch, indietro
+    di 42 righe: scriverci sopra avrebbe creato una divergenza peggiore del
+    ritardo. L'aggiornamento va fatto da `release/v0.0.3`, ed è questo.
+
+- **Decisioni prese, e perché**
+  - **La soglia dello slot è di tendenza, non di dimensione.** Il modo di guasto
+    vero non è "lo slot è grosso", è "lo slot ha smesso di avanzare": il WAL si
+    accumula finché il disco finisce. Un tetto da solo verrebbe superato troppo
+    tardi. Il criterio combina quindi attività (`active` vero in ≥ 99% dei
+    campioni, mai 3 consecutivi non-attivi), pendenza (≤ 1 MiB/h sulla seconda
+    metà del run) e un tetto di sicurezza a 256 MiB. **Alternativa scartata**:
+    un solo tetto assoluto, semplice da scrivere e cieco al caso che conta.
+    I 256 MiB stanno tre ordini di grandezza sopra i **0,060 MiB** misurati su
+    7,4 ore: intercettano uno slot bloccato molto prima del disco.
+  - **Il tetto RSS non è una costante: è la somma dei `mem_limit` dichiarati.**
+    Così si aggiorna da solo quando cambia il compose, non richiede di ricordarsi
+    di riallineare un numero in un documento, e misura la cosa che interessa —
+    se lo stack sta dentro ciò che dichiara di volere. **Alternativa scartata**:
+    fissare "≤ 16 GiB per lo stack pieno" a partire dal picco misurato, che
+    sarebbe invecchiato al primo servizio aggiunto e avrebbe legittimato il
+    consumo attuale invece di misurarlo. Aggiunta la condizione per-servizio
+    (nessuno oltre il 90% del proprio tetto per ≥ 10 campioni consecutivi): un
+    servizio che vive al 95% non ha ancora fallito, ma è a un picco dall'OOM
+    killer, e un verdetto sul solo totale non lo vedrebbe mai.
+  - **UNKNOWN è stato l'esito corretto, non una lacuna della sessione ENV-W.**
+    Il piano non dichiarava le soglie; inventarne una da riga di comando avrebbe
+    prodotto un verde senza referente. Vale la regola di `CLAUDE.md` §5 sul campo
+    derivato che deve distinguere "falso" da "non l'ho potuto sapere". La
+    correzione va nel piano, non nel run.
+  - **Il primo soak resta UNKNOWN su (d) per costruzione** — è stato eseguito su
+    uno stack *precedente* ai `mem_limit` di #21, quindi non esisteva un tetto
+    contro cui misurarlo. Non è un difetto: è ciò che lo rende il "prima" di P-5.
+  - **Ordine dei lavori nella finestra dettato dall'interferenza.** T0.7 → #44 →
+    T-PROF → soak #2, in quest'ordine: #44 richiede di occupare VRAM di proposito
+    e T-PROF richiede una composizione di stack diversa, quindi eseguirle
+    *durante* il soak #2 ne contaminerebbe la serie. Ieri l'ordine non era
+    disponibile perché il soak era già in corso quando le altre misure sono
+    diventate possibili.
+  - **Il soak #2 va lanciato con tutti i profili attivi.** Dopo O4.1 un
+    `docker compose up` nudo avvia il solo `core`: un "dopo" lanciato così
+    misurerebbe un sistema diverso dal "prima" a 19 container, e la differenza
+    sarebbe dominata dai sette container mancanti invece che dai tetti aggiunti.
+    Scritto in §4.3.2 perché è un errore che si commette una volta sola e
+    invalida silenziosamente il confronto.
+
+- **Test eseguiti**: nessuno da questa sessione — non ha Docker né GPU. Le misure
+  citate vengono dal run `20260827-1406-envw-c6b56d3` archiviato dalla sessione
+  ENV-W (427 campioni, checksum verificati, `c83bdff` su `feature/soak-harness`).
+
+- **Costo della sessione**: `claude-opus-5`, sessione di supervisione cloud,
+  lunga e a contesto compresso più volte — `usage` non riletto a questa entry,
+  non stimato.
+
+- **Non funziona / sospeso**: T0.7, #44 e T-PROF restano da eseguire (in corso
+  su ENV-W nella finestra fino alle ~22:00Z). `preflight.ps1` mai collaudato su
+  Windows. #23 attende ENV-L.
+
+### Lezione di processo: un run lungo deve mettersi al sicuro da solo
+
+L'esaurimento crediti del 27/08 sera ha ucciso la sessione ENV-W mentre il soak
+era in corso. Il campionatore era distaccato (PPID 1) e **ha continuato a
+lavorare**: al recupero, 427 campioni contigui, `soak.err.log` a zero byte,
+nessuna riga persa. La scelta di staccare il processo dalla sessione ha retto
+esattamente al guasto per cui era stata fatta.
+
+Ma i dati sono rimasti **non archiviati per circa quindici ore**, in attesa che
+qualcuno tornasse a raccoglierli. Se il container fosse stato reclamato, o se
+l'owner avesse restituito la macchina al noleggio, sette ore di misura non
+riproducibili sarebbero sparite — e sarebbero sparite *dopo* essere state
+prodotte correttamente, che è il modo più stupido di perdere un dato.
+
+**Regola che ne segue**: un run lungo archivia da sé al termine — checksum e
+copia in `~/NORTHSTREAM-archive/` come ultimo passo dello script, non come primo
+passo della sessione successiva. La sessione che torna deve trovare un archivio
+già chiuso da verificare, non un file JSONL da mettere in salvo. Da valutare in
+`bench/soak/run.sh` prima del T-SOAK-24h di v0.0.4, dove la finestra di
+esposizione sarebbe di 24 ore invece di 7.
+
+Corollario minore ma reale: l'intervallo di campionamento effettivo è **62,4 s**,
+non 60 — il campionamento stesso costa. I 430 campioni attesi erano una stima; i
+427 osservati sono il numero giusto. Un harness che pianifica una durata a
+partire dal numero di campioni deve tenerne conto.
+
+- **Prossimo passo per la sessione successiva**: raccogliere da ENV-W gli esiti
+  di T0.7, #44 e T-PROF, far flippare T0.7 in `bench/t0/expected/current.json`,
+  e portare i numeri di T-PROF nella tabella tier di #23. Poi #24.
+
+- **Decisioni richieste all'owner**: nessuna bloccante. Da sapere: la finestra
+  ENV-W corrente scade alle ~22:00Z del 28/08; se il soak #2 parte dopo le
+  ~16:00Z servirà o una coda più corta o un'estensione.

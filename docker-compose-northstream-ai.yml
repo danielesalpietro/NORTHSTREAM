@@ -282,10 +282,16 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
     container_name: northstream-elasticsearch
     restart: unless-stopped
-    # 1536m: ~512m of headroom above the already-fixed ES_JAVA_OPTS=-Xmx1g
-    # below (the "unica eccezione già vincolata" the review calls out) —
-    # grounded in that existing setting, not a bare guess.
-    mem_limit: 1536m
+    # 2048m. The previous 1536m looked grounded -- "~512m of headroom above
+    # -Xmx1g" -- but the arithmetic forgot direct memory: the JVM defaults
+    # MaxDirectMemorySize to the heap size / 2, so 1024 heap + 512 direct is
+    # 1536m exactly, leaving zero for metaspace, code cache, thread stacks and
+    # native allocations. Measured on ENV-W: 1529 MiB median, 99.5% of the cap,
+    # above 90% in 248 of 252 samples, memory.peak exactly 1536.0 MiB, and 23
+    # restarts over a 7.4h soak. OOMKilled stayed false throughout because ES
+    # exits itself under ExitOnOutOfMemoryError, so that field says nothing.
+    # 1024 heap + 512 direct + ~512 non-heap = 2048m (soak #2, 2026-08-28).
+    mem_limit: 2048m
     profiles: ["governance"]
     environment:
       discovery.type: single-node

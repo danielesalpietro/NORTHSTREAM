@@ -68,6 +68,18 @@ numeri misurati (T-PROF, [#23](https://github.com/danielesalpietro/NORTHSTREAM/i
   fallirebbe come un OOM-kill silenzioso, non come un errore leggibile.
 
 ### Fixed
+- `docker-compose-northstream-ai.yml`: `elasticsearch` passa da `mem_limit: 1536m`
+  a **`2048m`**. Il tetto sembrava fondato — "~512m di margine sopra `-Xmx1g`" — ma
+  l'aritmetica dimenticava la **direct memory**: la JVM imposta `MaxDirectMemorySize`
+  a metà dell'heap, quindi 1024 di heap + 512 di direct fanno **esattamente 1536m**,
+  senza un byte per metaspace, code cache, stack dei thread e allocazioni native.
+  Misurato su ENV-W nel soak #2: **1 529 MiB di mediana, il 99,5% del tetto**, sopra
+  il 90% in 248 campioni su 252, `memory.peak` esattamente 1 536,0 MiB e **23 riavvii**
+  in 7,4 ore. `OOMKilled` è rimasto **`false`** per tutto il tempo, perché ES esce da
+  sé sotto `ExitOnOutOfMemoryError`: chi si fida di quel campo conclude che di problemi
+  di memoria non ce ne sono. Nuovo tetto = 1024 heap + 512 direct + ~512 non-heap
+  (**P-5**, [#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21)).
+
 - `docker-compose-northstream-ai.yml`: `open-webui` passa da `mem_limit: 512m` a
   **`1024m`**. Il tetto stimato di [#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21)
   stava **sotto il footprint misurato** e teneva il container in **crashloop**:

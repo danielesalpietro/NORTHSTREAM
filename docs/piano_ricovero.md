@@ -340,8 +340,8 @@ se lo stack sta dentro ciò che dichiara di volere.
 
 | Condizione | Verdetto |
 |---|---|
-| RSS totale ≤ somma dei `mem_limit` del profilo, **e** nessun servizio oltre il 90% del proprio `mem_limit` per ≥ 10 campioni consecutivi | OK |
-| Tetto complessivo superato, o un servizio incollato al proprio tetto | FAIL |
+| RSS totale ≤ somma dei `mem_limit` del profilo, **e** nessun servizio oltre il 90% del proprio `mem_limit` per ≥ 10 campioni consecutivi, **e** `RestartCount` invariato per tutti i servizi dall'inizio alla fine del run | OK |
+| Tetto complessivo superato, o un servizio incollato al proprio tetto, o **`RestartCount` che cresce durante il run** | FAIL |
 | Uno o più servizi del profilo senza `mem_limit` **e senza esenzione dichiarata** | UNKNOWN — il tetto del profilo non è definito |
 
 **Esenzioni dichiarate** (correzione del 28/08, dopo T-PROF). La riga UNKNOWN qui
@@ -367,6 +367,23 @@ tetto perché abbiamo deciso così" e "non ha un tetto perché ce ne siamo dimen
 La seconda condizione conta quanto la prima: un servizio che vive al 95% del proprio
 tetto non ha ancora fallito, ma è a un picco di distanza dall'OOM killer, e un soak
 che riporta solo il totale non lo vedrebbe mai.
+
+**La terza condizione — `RestartCount` — è stata aggiunta il 29/08, dopo che le prime
+due hanno mancato il servizio più rotto dei diciannove.** `open-webui` girava con un
+tetto sotto il proprio footprint: 3 474 riavvii in 7,4 ore, `Health` mai `healthy`. Con
+la sola condizione "incollato al tetto" il suo run più lungo sopra il 90% era **2
+campioni**, cioè passava. La ragione è che le prime due condizioni misurano *un servizio
+che preme contro il tetto*, non *un servizio che ci muore contro*: quello muore prima di
+poter premere, e il suo RSS mediano — 138 MiB — risulta **il più basso della sua fascia**.
+
+Corollario, che vale oltre questa regola: **un tetto troppo stretto si legge come poco
+consumo, non come troppo.** Chi cerca un `mem_limit` sbagliato guardando l'RSS non lo
+trova mai; si cerca con `RestartCount`.
+
+E non ci si fida di `OOMKilled`: `elasticsearch` ha passato l'intero soak a `OOMKilled:
+false` pur restartando 23 volte per esaurimento memoria, perché esce da sé sotto
+`ExitOnOutOfMemoryError`. Un campo che dice "non è la memoria" mentre è la memoria è
+peggio di un campo assente.
 
 Conseguenza sul run già archiviato: il primo soak resta **UNKNOWN su (d) per
 costruzione**, perché è stato eseguito su uno stack **precedente** ai `mem_limit` di

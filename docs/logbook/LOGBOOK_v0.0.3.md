@@ -728,3 +728,80 @@ partire dal numero di campioni deve tenerne conto.
   chi possiede il codice: il `mem_limit` di `open-webui` (numero misurato:
   ~680 MiB), l'eccezione di §4.3.1(d) per i servizi senza tetto, e la
   conferma che A-3 ha ora una prova di produzione oltre a T0.8.
+
+---
+
+## Sessione ENV-W (Z8) — 29/08/2026, ~06:00Z — chiusura del soak #2: il "dopo" di P-5
+
+- **Ruolo**: host di verifica. Nessun codice committato: report, questa entry.
+- **Il run è completo**: ultimo campione **21:05:32Z** contro un `planned_end` di
+  21:06:12Z, **420 campioni**, `seq` 0…419 contigui, zero righe malformate,
+  durata reale **26 569 s = 7,380 h** contro i 26 589 s del soak #1 — **venti
+  secondi di differenza**, quindi la finestra comune è praticamente entrambi i
+  run interi. La sessione è caduta di nuovo e l'analisi è del giorno dopo: il
+  campionatore era distaccato e i dati hanno aspettato su disco, come il 27/08.
+  **È la seconda volta che quella scelta di progetto salva una misura.**
+- **Archiviato prima di ogni altra cosa**, con verifica a due passaggi: hash
+  presi sull'origine, copia, `sha256sum -c` contro quegli hash (3/3 `OK`), poi
+  `SHA256SUMS` rigenerato per l'intera directory. Verificati anche i grezzi del
+  soak #1.
+- **Il risultato — lo stack è dimezzato.** Mediana del RSS totale
+  **15 170 → 7 986 MiB, −47 %**; al netto di `ollama` (esente per esenzione
+  dichiarata, riportato a parte: mediana 686 MiB) **14 521 → 7 301 MiB**,
+  contro un tetto §4.3.1(d) di 16 768 MiB per il profilo pieno: il "dopo" usa
+  il **44 %** del budget.
+- **La risposta a P-5 non è il valore assoluto, è la pendenza**, e presa
+  dall'angolo sbagliato direbbe il contrario. Trino cresce **+73 %** nel
+  "prima" e **+60 %** nel "dopo": in relativo sembra poco cambiato. Ma la
+  pendenza per quarto di run dice l'opposto:
+  **senza tetti +694 / +630 / +183 / +130 MiB/h — dopo 7,4 ore saliva ancora e
+  non accennava a fermarsi; con i tetti +169 / +165 / +0,5 / +0,3 MiB/h.**
+  Sulla seconda metà: **+150,0 → +0,5 MiB/h, trecento volte meno.** Trino si
+  assesta entro metà run e resta a 1 572 MiB, il 61 % del proprio tetto.
+  **P-5 è chiuso nel comportamento.**
+- Secondo guadagno per dimensione: **`schema-registry`, da +235 a +20 MiB** di
+  crescita sul run.
+- **Verdetto §4.3, applicato come il piano è scritto adesso**:
+  - **(a) FAIL** — conteggio Qdrant piatto (27 414 → 27 414) *mentre* il DB
+    cresce di 8 276: è la riga più grave di §4.3.1(a). Causa: **A-3**.
+  - **(b) OK** — tutte e quattro le condizioni, in entrambi i run. WAL massimo
+    0,122 MiB contro 256, pendenza +0,000143 MiB/h.
+  - **(c) FAIL** — divario db-qdrant da 1 057 a 9 333, in crescita monotòna
+    (nel soak #1 era costante a ~95). La perdita **non è in transito**: è A-3
+    che sovrascrive a valle.
+  - **(d) FAIL, e non per il totale** — il totale passa largamente; fallisce la
+    **seconda** condizione: `elasticsearch` a 1 529 MiB su 1 536 (**99,5 %**),
+    sopra il 90 % in **404 campioni su 408**, sequenza consecutiva **356**
+    contro le 10 richieste.
+- **`verdict.py` e il piano danno verdetti OPPOSTI su (a)**, e ha ragione il
+  piano: lo script dice `OK — "growth plateaued or dropped — bounded"` perché
+  il conteggio è piatto. È piatto **perché i dati vengono distrutti**. È il
+  difetto che avevo già documentato falsificandolo su una riga, e questo run
+  ne è la dimostrazione dal vivo.
+- **Due numeri che sembrano buoni e non lo sono**, e vanno letti insieme:
+  `elasticsearch` **scende** da 1 712 a 1 502 MiB fra i due run, e
+  `open-webui` ha mediana 138 MiB. Nessuno dei due è un guadagno: entrambi
+  sbattono contro il proprio tetto e ripartono — ES **23 volte** (era 7 alle
+  18:19Z), open-webui **3 474**. **Un tetto troppo stretto si legge come poco
+  consumo**, ed è la ragione per cui il rilevatore giusto è `RestartCount` e
+  non l'RSS.
+- **Sweep di chiusura** (05:56Z, con 9 h di ritardo per la caduta della
+  sessione, quindi vale come stato *dopo* il run, non a fine run):
+  `elasticsearch` 23 riavvii, `open-webui` 3 474, **gli altri diciassette
+  ancora a `RestartCount = 0`**. Macchina libera, GPU a 362 MiB, nessun tenant.
+- **`open-webui` dichiarato contaminato** nel report: nello stack di questo run
+  il tetto era ancora 512 MiB perché il fix `f9a56fc` è arrivato a soak già
+  avviato, e **lo stack non è stato riavviato di proposito** — il soak valeva
+  più della correzione, che entra al prossimo avvio.
+- **I 12 campioni con `containers._error`** non sono rumore: si raggruppano sui
+  riavvii dei container, e il grappolo 17:52–17:54 coincide col riavvio di ES
+  delle 17:52:05.
+- **Il report sta su `release/v0.0.3`** e non su `feature/soak-harness` come
+  quello del soak #1: riguarda il comportamento della release e cita il report
+  dello sweep, che vive qui. Se la convenzione dev'essere l'altra, si sposta.
+- **Costo della sessione**: **non misurabile** (sessione bridge).
+- **Decisioni richieste all'owner**: il tetto di `elasticsearch` — il numero
+  misurato dice almeno 2 048 MiB, oppure ridurre `-Xmx` o la direct memory, e
+  **quale delle due è una decisione di progetto**. Resta poi da decidere se
+  T-SOAK-24h vada rifatto per intero dopo la chiusura di A-3, dato che oggi
+  (a) e (c) non possono che fallire.

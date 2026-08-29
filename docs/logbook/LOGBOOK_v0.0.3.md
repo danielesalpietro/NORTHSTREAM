@@ -805,3 +805,97 @@ partire dal numero di campioni deve tenerne conto.
   **quale delle due è una decisione di progetto**. Resta poi da decidere se
   T-SOAK-24h vada rifatto per intero dopo la chiusura di A-3, dato che oggi
   (a) e (c) non possono che fallire.
+
+---
+
+## 2026-08-29 — supervisione (sessione cloud) — il secondo tetto sbagliato, e la terza correzione a una regola mia
+
+- **Obiettivo della sessione**: raccogliere gli esiti della finestra ENV-W del 28/08,
+  correggere i difetti che ha scoperto, e decidere le due questioni che la sessione
+  bridge ha lasciato aperte.
+
+- **Fatto**:
+  - `docker-compose-northstream-ai.yml`: `elasticsearch` 1536m → **2048m** (`75446b7`),
+    dopo `open-webui` 512m → 1024m (`f9a56fc`) del giorno prima.
+  - `docs/piano_ricovero.md` §4.3.1(d): **terza condizione**, `RestartCount` invariato
+    per tutto il run.
+  - `CLAUDE.md` §2 riallineata sui numeri del soak #2.
+
+- **I numeri della finestra** (fonte: `c34bb7b`, `c477428`, run report archiviati)
+  - **P-5 chiuso nel comportamento.** RSS totale mediano **15 170 → 7 986 MiB, −47%**.
+    Al netto di `ollama` (esente, riportato a parte) 14 521 → 7 301 contro un tetto
+    §4.3.1(d) di 16 768.
+  - **La risposta di Trino è la pendenza, non il livello.** La crescita relativa è
+    +73% prima e +60% dopo, che da sola non direbbe nulla. Per quarti:
+    **+694/+630/+183/+130 MiB/h senza tetti** — ancora in salita dopo 7,4 ore —
+    contro **+169/+165/+0,5/+0,3** con i tetti. Pendenza sulla seconda metà:
+    **+150,0 → +0,5 MiB/h**. È la differenza fra una JVM che cresce e una che si
+    assesta, ed è il senso dell'intera release.
+  - **T-PROF**: profilo `core` a **3,0 GiB** contro un criterio di 14 GB — oltre 4×
+    di margine.
+  - Verdetti: **(b) OK** su tutte e quattro le condizioni · **(a) e (c) FAIL** per A-3
+    · **(d) FAIL** non sul totale (44% del budget) ma su `elasticsearch`.
+
+- **Decisioni prese, e perché**
+  - **`elasticsearch` a 2048m tenendo `-Xmx1g`**, invece di abbassare l'heap. Il tetto
+    vecchio sembrava fondato ("~512m di margine sopra `-Xmx1g`") ma l'aritmetica aveva
+    dimenticato la **direct memory**: la JVM la imposta a metà dell'heap, quindi
+    1024 + 512 = **esattamente 1536m**, zero per metaspace, code cache, stack e native.
+    Misura: 1 529 MiB di mediana, 99,5% del tetto, `memory.peak` esattamente 1 536,0,
+    23 riavvii. **Alternativa scartata**: abbassare `-Xmx` o `MaxDirectMemorySize`,
+    che avrebbe fatto stare i numeri dentro un tetto scelto male invece di correggere
+    il tetto — e `-Xmx1g` è l'unico valore del compose ancorato a un'impostazione
+    esplicita, non a una stima.
+  - **`OOMKilled` non è una fonte attendibile.** È rimasto `false` per tutto il soak
+    mentre ES restartava 23 volte per memoria, perché esce da sé sotto
+    `ExitOnOutOfMemoryError`. Un campo che dice "non è la memoria" mentre è la memoria
+    è peggio di un campo assente: scritto accanto alla regola.
+  - **Terza condizione di (d): `RestartCount`.** Le prime due hanno **mancato il
+    servizio più rotto dei diciannove**: `open-webui`, 3 474 riavvii in 7,4 ore, aveva
+    un run massimo sopra il 90% del tetto di **due campioni**. Misuravano un servizio
+    che *preme* contro il tetto, non uno che ci *muore* contro — e quello muore prima
+    di premere. Corollario generale: **un tetto troppo stretto si legge come poco
+    consumo, non come troppo** (RSS mediano 138 MiB, il più basso della sua fascia).
+    Si cerca con `RestartCount`, mai con l'RSS.
+  - **T-SOAK-24h aspetta la chiusura di A-3.** Oggi (a) e (c) falliscono per la
+    sovrascrittura del corpus: rifarlo adesso significherebbe spendere 24 ore per
+    rimisurare un guasto già noto e già documentato. **Alternativa scartata**: farlo
+    subito "per avere il numero", che avrebbe prodotto un dato non interpretabile.
+  - **Gate aggiunto a #24**: una finestra ENV-W **breve** (~1 h) sul compose corretto,
+    che confermi `RestartCount` invariato sui 19 container ed `elasticsearch` sotto il
+    90% di 2048m. v0.0.3 promette onestà sulle risorse: non può uscire con due tetti
+    corretti a occhi chiusi, che è esattamente l'errore che la release doveva chiudere.
+
+- **Test eseguiti**: nessuno da questa sessione (niente Docker). `docker compose config`
+  non disponibile; validato il YAML con `yaml.safe_load`.
+
+- **Costo della sessione**: `claude-opus-5`, sessione di supervisione cloud lunga, a
+  contesto compresso più volte — `usage` non riletto, non stimato.
+
+### Lezione di processo: tre correzioni in due giorni, tutte alle mie regole
+
+Le soglie di §4.3.1 le ho scritte io il 28/08. In due giorni ne ho corrette tre:
+
+1. **(d) degenerava in UNKNOWN perpetuo**, perché `ollama` è senza tetto di proposito
+   e sta in ogni profilo → esenzioni dichiarate.
+2. **(a) non poteva fallire**, e dava verde proprio nel caso peggiore, quello in cui
+   il conteggio è piatto perché i dati vengono distrutti → criterio riscritto.
+3. **(d) mancava il servizio più rotto**, perché misurava "incollato al tetto" e non
+   "muore contro il tetto" → terza condizione, `RestartCount`.
+
+Tutte e tre sono emerse perché la sessione ENV-W ha **applicato le regole alla lettera
+invece di aggirarle**. Se avesse "interpretato" (d) per farla tornare, o accettato il
+verde di (a), nessuna delle tre sarebbe venuta fuori e avremmo rilasciato con tre check
+decorativi. È la stessa dinamica che ha smascherato T0.7: **il valore sta nell'eseguire
+la regola come è scritta e riferire quando produce un assurdo**, non nel farla tornare.
+
+Corollario per chi scrive le regole: una soglia scritta a tavolino non è un fatto, è
+un'ipotesi. Va falsificata sulla prima misura vera, esattamente come un test.
+
+- **Prossimo passo per la sessione successiva**: ottenuta una finestra ENV-W breve,
+  eseguire il gate dei due tetti; poi #24 (CHANGELOG, gate, tag) e #23 su ENV-L.
+
+- **Decisioni richieste all'owner**:
+  1. Una **finestra ENV-W di circa un'ora** per il gate dei due tetti corretti.
+  2. Se avviare la sessione bridge **dentro `tmux`**: si è archiviata tre volte in due
+     giorni, e ogni volta l'analisi è slittata di ore pur senza perdere dati.

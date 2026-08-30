@@ -10,8 +10,16 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 
 ## [Unreleased]
 
-*(v0.0.3 — Fase 2, stack onesto sulle risorse. In coda: tier riscritti sui
-numeri misurati (T-PROF, [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23)).)*
+*(Fase 3 — v0.0.4, agent robusto. In coda: point-id deterministici (A-3),
+timestamp nel payload e filtro recency (A-2), rimozione del boost keyword su
+`KNOWN_SITES` (A-1), `/health` reale (A-5).)*
+
+## [v0.0.3] — 2026-08-30
+
+*Stack onesto sulle risorse (obiettivo O4). Progression test dichiarato:
+**T0.7 PASS** su hardware vero, falsificato in tre casi. Tier riscritti sui
+numeri misurati: rimandati a [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23),
+che richiede ENV-L per le righe VRAM a 16 GB.*
 
 ### Added
 - `bench/gate/run_caps_gate.sh` e `bench/gate/verdict_caps.py` — il **gate dei

@@ -18,9 +18,12 @@ It is inspired by the architectural concepts behind:
 
 > **What is actually wired today.** One data path runs end to end:
 > PostgreSQL → Debezium CDC → Kafka → Stream Context Agent → Qdrant → local LLM.
-> Flink, Apicurio, MinIO, Trino and OpenMetadata start with the stack and are
-> useful to show and discuss, but nothing writes to them or reads from them
-> yet: they are available extensions, not steps of the current flow. The
+> Trino can now query the operational PostgreSQL directly (`postgresql.public.orders`),
+> so it is the one extension that reads real data. Flink, Apicurio, MinIO and
+> OpenMetadata are useful to show and discuss, but nothing writes to them or
+> reads from them yet: they are available extensions, not steps of the current
+> flow. Since v0.0.3 they no longer start by default either — see
+> [Compose profiles](#compose-profiles). The
 > [Layer status](#layer-status) table below says which is which, service by
 > service. Work in progress is tracked in
 > [`docs/piano_ricovero.md`](docs/piano_ricovero.md) (in Italian).
@@ -133,7 +136,8 @@ would be lying if it described them as part of the pipeline:
 | Stream Context Agent (addon) | qdrant, stream-agent, data-generator | **Wired** — the RAG loop over live events |
 | Schema governance | Apicurio Registry | **Not wired** — Debezium uses `JsonConverter` with schemas disabled, so no schema is ever registered |
 | Stream processing | Flink JobManager, TaskManager | **Not wired** — the cluster runs, no job is submitted by this repository |
-| Lakehouse foundation | MinIO, Trino | **Not wired** — the buckets are created and stay empty; Trino starts without catalogs |
+| Lakehouse foundation | MinIO | **Not wired** — the buckets are created and stay empty |
+| SQL query engine | Trino | **Partly wired** — the `postgresql` catalog queries the operational database directly (`SELECT count(*) FROM postgresql.public.orders` agrees with `psql` row for row); no Iceberg or MinIO catalog yet |
 | Governance | OpenMetadata, Elasticsearch | **Not wired** — the catalog runs empty, no ingestion is configured |
 
 Connecting these layers one at a time, each with a working demo as the
@@ -183,14 +187,52 @@ definition of done, is the subject of the [Roadmap](#roadmap).
 
 ---
 
+## Compose profiles
+
+Not every service is needed for every demo, and until v0.0.2 the stack started
+all nineteen containers whatever you were doing. Three profiles now split them
+by purpose:
+
+| Profile | Services | Started by default |
+|---|---|---|
+| `core` (untagged) | PostgreSQL, Debezium Connect, Kafka, Kafka UI, Qdrant, Stream Context Agent, data generator, Ollama, Open WebUI, Adminer, landing page | **yes** |
+| `lakehouse` | MinIO, Trino, Schema Registry, Flink JobManager, Flink TaskManager | no |
+| `governance` | OpenMetadata, its PostgreSQL, Elasticsearch | no |
+
+```bash
+# core only — the end-to-end data path, and what the demo needs
+docker compose -f docker-compose-northstream-ai.yml up -d
+
+# add the query engine and the lakehouse foundation
+docker compose -f docker-compose-northstream-ai.yml --profile lakehouse up -d
+
+# everything, as before v0.0.3
+docker compose -f docker-compose-northstream-ai.yml \
+  --profile lakehouse --profile governance up -d
+```
+
+Every service also declares a `mem_limit`, so a container that misbehaves is
+capped rather than free to take the host down. Two of those caps were initially
+set below the footprint the service actually needs, which put the container in
+a restart loop — the symptom being *low* memory use rather than high, since the
+process died before it could grow. Both were corrected against measurements
+(`open-webui` 1 GiB, `elasticsearch` 2 GiB) and confirmed on a running stack.
+Ollama is deliberately left uncapped: what it needs is decided by the model you
+load, not by the compose file.
+
 ## Prerequisites
 
 - Docker Engine or Docker Desktop
 - Docker Compose v2
 
-Pick the tier that matches your machine. All three run the full base stack
-plus the Stream Context Agent addon — the difference is model size and
-response speed.
+Pick the tier that matches your machine. All three run the base stack plus the
+Stream Context Agent addon — the difference is model size and response speed.
+
+Since v0.0.3 the default `docker compose up` starts the **`core` profile only**
+(eleven containers), measured at **~3.0 GiB of RSS** on a settled stack. The
+seven services of the `lakehouse` and `governance` profiles are opt-in — see
+[Compose profiles](#compose-profiles) — so the numbers below are the ceiling
+for running everything, not what an idle demo costs.
 
 | Tier | RAM | vCPU | Disk | GPU | Suggested Granite models |
 |---|---|---|---|---|---|
@@ -708,7 +750,8 @@ Implemented by the Stream Context Agent addon:
 
 Still open:
 
-- [ ] Add Trino catalogs for PostgreSQL and MinIO
+- [x] Add a Trino catalog for PostgreSQL — done in v0.0.3
+- [ ] Add a Trino catalog for MinIO
 - [ ] Add Iceberg support
 - [ ] Add Prometheus and Grafana observability
 - [ ] Add OpenMetadata ingestion examples

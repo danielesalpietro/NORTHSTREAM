@@ -60,25 +60,75 @@ def read_inspect(path):
     return out
 
 
-def main(archive):
-    root = pathlib.Path(archive)
-    start, end = read_inspect(root / "inspect.start.tsv"), read_inspect(root / "inspect.end.tsv")
-    if not start or not end:
-        print("UNKNOWN — inspect sweeps missing; the gate did not complete")
-        return 2
 
-    series, missing = {}, 0
-    for line in (root / "stats.tsv").read_text().splitlines() if (root / "stats.tsv").exists() else []:
-        parts = line.split("\t")
-        if len(parts) < 3 or parts[2].startswith("ERROR"):
+def read_jsonl(path):
+    """ENV-W's own sampler format: one JSON object per sample, every container's
+    restarts/limit/rss/current/peak in each. Richer than the stats.tsv shape --
+    it sees a restart *inside* the window, not only across the endpoints -- so
+    when both are present this one wins.
+
+    Judged on `current_mib`, the figure the cgroup actually enforces, with
+    `peak_mib` kept as a separate signal: elasticsearch was caught by a peak
+    sitting at exactly its limit while the median looked survivable.
+    """
+    import json
+    start, end, series, peaks, missing = {}, {}, {}, {}, 0
+    seen_restarts = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            sample = json.loads(line)
+        except ValueError:
             missing += 1
             continue
-        for entry in parts[2].split("|"):
-            if entry.count(";") < 2:
+        for name, c in (sample.get("containers") or {}).items():
+            cap = c.get("limit_mib") or None
+            rec = {"restarts": c.get("restarts"), "state": c.get("status", "?"),
+                   "health": c.get("health", "?"), "cap_mib": cap,
+                   "oomkilled": str(c.get("oom_killed", "?"))}
+            start.setdefault(name, rec)
+            end[name] = rec
+            series.setdefault(name, []).append(c.get("current_mib"))
+            if c.get("peak_mib") is not None and cap:
+                peaks[name] = max(peaks.get(name, 0), c["peak_mib"])
+            seen_restarts.setdefault(name, []).append(c.get("restarts"))
+    # A restart that happens and is undone within the window would hide between
+    # the endpoints; compare against the max seen instead of the last value.
+    for name, values in seen_restarts.items():
+        known = [v for v in values if v is not None]
+        if known:
+            end[name]["restarts"] = max(known)
+    return start, end, series, peaks, missing
+
+
+def main(archive):
+    root = pathlib.Path(archive)
+    peaks = {}
+    jsonl = root / "samples.jsonl"
+    if jsonl.exists():
+        start, end, series, peaks, missing = read_jsonl(jsonl)
+        if not start:
+            print("UNKNOWN — samples.jsonl holds no readable container data")
+            return 2
+    else:
+        start, end = read_inspect(root / "inspect.start.tsv"), read_inspect(root / "inspect.end.tsv")
+        if not start or not end:
+            print("UNKNOWN — inspect sweeps missing; the gate did not complete")
+            return 2
+        series, missing = {}, 0
+        for line in (root / "stats.tsv").read_text().splitlines() if (root / "stats.tsv").exists() else []:
+            parts = line.split("\t")
+            if len(parts) < 3 or parts[2].startswith("ERROR"):
+                missing += 1
                 continue
-            name, usage, _ = entry.split(";", 2)
-            mib = to_mib(usage.split("/")[0])
-            series.setdefault(name.strip(), []).append(mib)
+            for entry in parts[2].split("|"):
+                if entry.count(";") < 2:
+                    continue
+                name, usage, _ = entry.split(";", 2)
+                mib = to_mib(usage.split("/")[0])
+                series.setdefault(name.strip(), []).append(mib)
 
     failures, unknowns, rows = [], [], []
     for name in sorted(set(start) | set(end)):
@@ -96,7 +146,10 @@ def main(archive):
         # unhealthy without restarting would otherwise score green in silence,
         # and silence is the failure mode this whole gate exists to remove.
         health = e.get("health", "?")
-        if health not in ("healthy", "none", "?"):
+        # "-" and "none" both mean "this container declares no healthcheck";
+        # the real ENV-W sampler writes "-", which read as unhealthy would have
+        # turned eleven perfectly fine containers into UNKNOWN.
+        if health not in ("healthy", "none", "-", "", "?"):
             unknowns.append(f"{name}: health is {health!r} while its cap holds")
 
         pct = longest = None
@@ -108,6 +161,9 @@ def main(archive):
                 longest = max(longest or 0, run)
             if longest >= 10:
                 failures.append(f"{name}: above 90% of its {cap:.0f} MiB cap for {longest} consecutive samples")
+            peak = peaks.get(name)
+            if peak and peak >= 0.99 * cap:
+                failures.append(f"{name}: peak {peak:.1f} MiB reached its {cap:.0f} MiB cap")
         elif not cap:
             unknowns.append(f"{name}: no mem_limit (exempt only if the compose says why)")
         elif not samples:

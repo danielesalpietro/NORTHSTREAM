@@ -978,3 +978,68 @@ lo stesso difetto a monte (`docker ps` senza filtro). Il difetto **(2)** non è 
      il verdetto è UNKNOWN. Senza, non è usabile in nightly.
   2. **#44 su due device**: riverifica necessaria prima di riaprire `RUN_NIGHTLY`.
   3. `tmux` per la sessione bridge: quarta morte in tre giorni. Costa dieci secondi.
+
+---
+
+## 2026-08-30 — ENV-W (Z8), sessione bridge: #44 riverificato su due schede — lo stato regge, la capienza no
+
+**RUN_ID**: `20260830-2231-envw-d48ed60-44-due-gpu` · report:
+[`docs/runs/20260830-2231-envw-d48ed60-44-due-gpu.md`](../runs/20260830-2231-envw-d48ed60-44-due-gpu.md) ·
+grezzi con `SHA256SUMS` verificato (3/3). Riverifica **chiesta esplicitamente dall'owner**; la
+contesa è stata creata con due container estranei e rimossa a fine prova (stato C verificato).
+
+ENV-W ha da oggi **RTX 3090 (sm_86) + RTX 5060 Ti (sm_120)**, driver 595.84; host riavviato alle
+20:28:45Z.
+
+**Lo stato a tre valori regge.** A `exclusive` · **B1, contesa sulla sola 5060 Ti con la 3090
+libera — il caso che con una scheda non poteva esistere — `shared`, corretto** · C `exclusive`
+dopo la rimozione. E lo vede per la ragione giusta: l'attribuzione passa da
+`/proc/<pid>/cgroup` alla label di progetto del container, non dal device, quindi il numero di
+schede non la tocca. Il caso `unknown` non è stato rieseguito perché non dipende dal numero di
+device: il modulo non arriva a leggere le schede.
+
+**Il difetto è il numero di capienza.** Con 17 GiB occupati da un estraneo sulla 3090 e 2 GiB
+sulla 5060 Ti: libero reale **dev0 6 437, dev1 13 657**, e il modulo riporta
+`gpu_free_mib 21011` — la somma. Nessuna scheda può ospitare un run da 16 000 MiB, ma il
+cancello lo lascia partire:
+
+```
+WARN GPU exclusivity (#44): shared — ... (free VRAM (21011 MiB) still covers the 16000 MiB
+     this run declared)
+preflight OK — this host meets the requirements for tier 'minimal'.   EXIT=0
+```
+
+**Il falso verde non richiede `--allow-contention`**: senza il flag l'esito è identico, perché la
+contesa viene tollerata proprio quando la VRAM libera copre la soglia — comportamento B3 del
+28/08, corretto su una scheda e sbagliato su due. Anche `gpu_total_mib 40887` non è la capienza
+di nulla, e un tier "16 GB VRAM" letto contro quel numero passerebbe sempre. Correzione: lettura
+**per device** e decisione sul **massimo libero su una singola scheda**; la somma resta
+informativa. Finché non c'è, ogni `--require-vram-mib` su ENV-W è inaffidabile.
+
+**Trovato di traverso, e più urgente: Ollama gira su CPU dal riavvio.** Il 29/08 offloadava
+7/7 layer su `CUDA0`; dal 30/08 20:36Z il log dice `inference compute id=cpu`, dopo watchdog
+timeout della GPU discovery su tutte e tre le librerie. Riprodotto in un comando:
+`llama-server --list-devices` → `Available devices: (none)`. **Non è l'host**: `nvidia-smi -L`
+dentro il container vede entrambe le schede, il passthrough è applicato (`Count: -1`), e un
+probe `torch` crea il contesto CUDA in **0,1 s su entrambe** con allocazione riuscita. È Ollama
+che non enumera più le GPU con la scheda sm_120 presente. Oggi i modelli sono serviti 100% CPU e
+un `llama-server` gira al 141% di CPU da oltre due ore: **nessuna misura di inferenza presa
+adesso è confrontabile** con quelle precedenti.
+
+**Terza cosa**: `docker-compose.gpu.yml` riserva `count: all`, quindi quando Ollama tornerà a
+vedere le GPU sarà lui a scegliere la scheda — e le due hanno prestazioni diverse. Per v0.0.4 il
+device va fissato e scritto nel manifest.
+
+**Autocorrezione**: a metà lavoro avevo concluso che *la creazione del contesto CUDA si pianta
+su questo host* — le probe non rispondevano e un container `vastai/test` era fermo in `Created`.
+Falso: i 243 s erano l'avvio a freddo dell'immagine `pytorch` da 11,4 GB, e a immagine calda il
+secondo probe ha impiegato 8,15 s in tutto. La conclusione sbagliata spiegava bene i sintomi e
+avrebbe attribuito all'host un guasto che è di Ollama.
+
+- **Costo della sessione**: **non misurabile** (sessione bridge).
+- **Prossimo passo**: #24 (CHANGELOG e tag) non è bloccato da questo; il gate dei due tetti
+  resta verde perché è cgroup e RAM.
+- **Decisioni richieste all'owner**:
+  1. **`gpu_exclusivity.py` per device**: correzione necessaria prima di riaprire `RUN_NIGHTLY`.
+  2. **Ollama su CPU**: merita una issue a sé; oggi la GPU del progetto è ferma.
+  3. **Fissare il device** in `docker-compose.gpu.yml` per rendere confrontabili le misure.

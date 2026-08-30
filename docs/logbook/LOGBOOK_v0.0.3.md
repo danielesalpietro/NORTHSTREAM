@@ -962,6 +962,15 @@ scaricato, i picchi sono gli istanti in cui il modello è residente e durano men
 del **device 0 (3090)**: all'epoca dei run la macchina aveva una scheda sola. Da qui in poi ogni
 misura VRAM fissa il device e lo scrive nel manifest.
 
+**Addendum dopo il rebase su `bec34cd`**: `verdict_caps.py` è stato aggiornato mentre scrivevo
+(legge il JSONL nativamente, tratta `"-"` come assenza di healthcheck, confronta i riavvii col
+massimo nella finestra, aggiunge il picco ≥ 99% del tetto). Rieseguito sull'archivio vero senza
+shim: **nessun FAIL** — ES picco 1 715,6 su 2 048 (83,8%), `open-webui` 747,3 su 1 024 (73,0%).
+Restano due UNKNOWN: `ollama` (difetto **(1)** confermato dalla versione nuova) e il container
+estraneo effimero, che rivela un terzo punto — **il verdetto non filtra per progetto**, e un
+container altrui presente per un solo campione manda il gate in UNKNOWN. Il mio campionatore ha
+lo stesso difetto a monte (`docker ps` senza filtro). Il difetto **(2)** non è stato toccato.
+
 - **Costo della sessione**: **non misurabile** (sessione bridge).
 - **Prossimo passo**: #24 — CHANGELOG e tag di v0.0.3; il gate che lo bloccava è verde.
 - **Decisioni per l'owner e per chi scrive codice**:

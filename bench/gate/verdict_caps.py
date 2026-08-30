@@ -22,6 +22,25 @@ import sys
 import pathlib
 import statistics
 
+# Services the compose deliberately leaves uncapped, with the reason it gives.
+# Without this the verdict can never return OK on a real archive: ollama has no
+# mem_limit on purpose and sits in every profile, so every run ends UNKNOWN --
+# the exact degeneration §4.3.1(d) corrected in the plan on 2026-08-28, walked
+# back in through the code. Per that rule an exempt service is not waved
+# through: its RSS is reported separately, so it stays in the reader's view
+# without a ceiling to fail against.
+# This list must match the compose. Drift is a real risk and is deliberately
+# visible: an unlisted uncapped service still reads UNKNOWN, never OK.
+DECLARED_EXEMPT = {
+    "northstream-ollama": "no mem_limit on purpose: what it needs is set by the model loaded",
+}
+
+# A window this short cannot exercise the ">= 10 consecutive samples above 90%"
+# condition at all, so a verdict over fewer samples would be green having looked
+# at nothing. Truncated series are not hypothetical here: the ENV-W session died
+# mid-run four times in three days.
+MIN_SAMPLES = 12
+
 UNIT = {"B": 1 / 1048576, "KIB": 1 / 1024, "MIB": 1.0, "GIB": 1024.0,
         "KB": 1000 / 1048576, "MB": 1e6 / 1048576, "GB": 1e9 / 1048576}
 
@@ -103,7 +122,7 @@ def read_jsonl(path):
     return start, end, series, peaks, missing
 
 
-def main(archive):
+def main(archive, prefix="northstream-"):
     root = pathlib.Path(archive)
     peaks = {}
     jsonl = root / "samples.jsonl"
@@ -130,8 +149,21 @@ def main(archive):
                 mib = to_mib(usage.split("/")[0])
                 series.setdefault(name.strip(), []).append(mib)
 
-    failures, unknowns, rows = [], [], []
+    sample_count = max((len(v) for v in series.values()), default=0)
+    if sample_count < MIN_SAMPLES:
+        print(f"UNKNOWN — {sample_count} samples, below the {MIN_SAMPLES} needed for the "
+              f"'>= 10 consecutive above 90%' condition to be reachable at all. "
+              f"A verdict here would be green having looked at nothing.")
+        return 2
+
+    failures, unknowns, rows, exempt, foreign = [], [], [], [], []
     for name in sorted(set(start) | set(end)):
+        # Containers outside this compose project are reported, not judged. One
+        # foreign container alive for a single sample used to send the whole
+        # gate to UNKNOWN.
+        if not name.startswith(prefix):
+            foreign.append(name)
+            continue
         s, e = start.get(name, {}), end.get(name, {})
         r0, r1, cap = s.get("restarts"), e.get("restarts"), e.get("cap_mib") or s.get("cap_mib")
         samples = [v for v in series.get(name, []) if v is not None]
@@ -165,7 +197,10 @@ def main(archive):
             if peak and peak >= 0.99 * cap:
                 failures.append(f"{name}: peak {peak:.1f} MiB reached its {cap:.0f} MiB cap")
         elif not cap:
-            unknowns.append(f"{name}: no mem_limit (exempt only if the compose says why)")
+            if name in DECLARED_EXEMPT:
+                exempt.append((name, med, DECLARED_EXEMPT[name]))
+            else:
+                unknowns.append(f"{name}: no mem_limit and not a declared exemption")
         elif not samples:
             unknowns.append(f"{name}: no usable samples")
 
@@ -184,7 +219,13 @@ def main(archive):
               f"{(f'{r0}->{r1}' if r0 is not None else '?'):>10}"
               f"{(str(longest) if longest is not None else '—'):>10}  {health}")
     print(f"\ncapped total {total:.0f} MiB of {budget:.0f} MiB budget"
-          f"{f'  ({missing} samples missing)' if missing else ''}\n")
+          f" over {sample_count} samples"
+          f"{f'  ({missing} unreadable)' if missing else ''}")
+    for name, med, why in exempt:
+        print(f"exempt  {name}: {med:.0f} MiB — {why}" if med else f"exempt  {name}: ? MiB — {why}")
+    if foreign:
+        print(f"outside {prefix}: {', '.join(foreign)} (reported, not judged)")
+    print()
 
     for f in failures:
         print(f"FAIL    {f}")
@@ -198,4 +239,5 @@ def main(archive):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "."))
+    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else ".",
+                  sys.argv[2] if len(sys.argv) > 2 else "northstream-"))

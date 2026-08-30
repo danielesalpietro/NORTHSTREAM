@@ -140,7 +140,7 @@ periodo tranquillo non verifica quindi che compaia la frase "non è successo nul
 | ID | Macchina | Ruolo nel piano | Limiti noti |
 |---|---|---|---|
 | **ENV-L** | Laptop 32 GB DDR5, RTX 5080 16 GB, Docker/WSL2 | Loop di sviluppo, profilo `core`, prove demo, T0/T-smoke quotidiani | Niente profilo full + soak insieme; WSL2 assorbe RAM (usare i `.wslconfig` di `examples/`) |
-| **ENV-W** | HP Z8 G4, 2× Xeon 6244, 256 GB RAM + 256 GB PMEM/DAX, RTX 3090 24 GB, Ubuntu 24, Docker | Profilo **full**, nightly CI (runner self-hosted), soak test 24 h, matrice CPU, inferenza fino a `granite4:32b-a9b-h` (19 GB, entra nei 24 GB della 3090) | Un solo GPU slot: le sweep parallele multi-modello saturano; PMEM/DAX utilizzabile come backend volumi per i soak I/O-intensivi (opzionale, non richiesto dal piano). **Le misure di RAM qui non sono trasferibili ai tier**: con 256 GB fisici le JVM dello stack (Kafka, Debezium Connect, Flink, Trino) auto-dimensionano l'heap a una frazione della RAM di sistema, quindi il footprint osservato è un limite superiore. P-5 e T-PROF si validano solo su ENV-L o con `mem_limit` espliciti (unica eccezione già vincolata: Elasticsearch, `-Xmx1g` fisso nel compose). **La 3090 non è dedicata al progetto** (chiarito dall'owner il 27/08): fuori dalle finestre di manutenzione la macchina è **noleggiata su vast.ai**, e un tenant può occupare da 11,6 a 22,3 GiB dei 24,5 — misurato durante la nightly di verifica di #42. Conseguenza operativa: ENV-W ha **due stati**, *manutenzione* (GPU nostra) e *noleggio* (GPU di terzi), e le misure GPU-dipendenti valgono solo nel primo. Chi pianifica un run GPU su ENV-W chiede prima all'owner in quale stato sia — finché il controllo automatico di [#44](https://github.com/danielesalpietro/NORTHSTREAM/issues/44) (pre-check, run-check, post-run) non è in piedi |
+| **ENV-W** | HP Z8 G4, 2× Xeon 6244, 256 GB RAM + 256 GB PMEM/DAX, **due GPU dal 29/08: RTX 3090 24 GB (Ampere) + RTX 5060 Ti 16 GB (Blackwell)**, Ubuntu 24, Docker | Profilo **full**, nightly CI (runner self-hosted), soak test 24 h, matrice CPU, inferenza fino a `granite4:32b-a9b-h` (19 GB, entra nei 24 GB della 3090) | Un solo GPU slot: le sweep parallele multi-modello saturano; PMEM/DAX utilizzabile come backend volumi per i soak I/O-intensivi (opzionale, non richiesto dal piano). **Le misure di RAM qui non sono trasferibili ai tier**: con 256 GB fisici le JVM dello stack (Kafka, Debezium Connect, Flink, Trino) auto-dimensionano l'heap a una frazione della RAM di sistema, quindi il footprint osservato è un limite superiore. P-5 e T-PROF si validano solo su ENV-L o con `mem_limit` espliciti (unica eccezione già vincolata: Elasticsearch, `-Xmx1g` fisso nel compose). **Aggiornamento del 27/08, dopo #21**: i `mem_limit` ora ci sono su 20 servizi su 21, quindi la premessa è caduta — un container con tetto cgroup dimensiona l'heap su quel tetto e non sui 256 GB dell'host, e **la misura di T-PROF diventa portabile e può essere presa su ENV-W**. Resta a ENV-L ciò che nessun tetto rende trasferibile: (a) che lo stack **funzioni** su un host stretto — pressione di memoria, swap, OOM killer, overhead della VM di WSL2, che su una macchina da 256 GB non si manifestano mai; (b) le righe **VRAM** della tabella tier, dove 16 GB (5080) è una domanda a cui una 3090 non può rispondere; (c) il collaudo di `preflight.ps1`, mai eseguito su Windows. **La 3090 non è dedicata al progetto** (chiarito dall'owner il 27/08): fuori dalle finestre di manutenzione la macchina è **noleggiata su vast.ai**, e un tenant può occupare da 11,6 a 22,3 GiB dei 24,5 — misurato durante la nightly di verifica di #42. Conseguenza operativa: ENV-W ha **due stati**, *manutenzione* (GPU nostra) e *noleggio* (GPU di terzi), e le misure GPU-dipendenti valgono solo nel primo. **Conseguenza del 29/08, da trattare prima di fidarsi di nuovo di #44**: la macchina è passata da una a **due** GPU, e #44 è stato scritto e verificato su una sola. Finché non è ricontrollato, ogni suo esito è sospetto — un totale aggregato su due schede, o una lettura del solo device 0, direbbero "libera" con l'altra occupata e viceversa. Vale anche per le misure: una riga di VRAM che non dichiara **su quale device** è stata presa non è interpretabile a posteriori, quindi il device va **fissato esplicitamente** (`CUDA_VISIBLE_DEVICES` / selezione device nel compose) e **registrato nel manifest**, non lasciato scegliere a Ollama. È lo stesso caso del campo derivato che deve distinguere "falso" da "non l'ho potuto sapere" (`CLAUDE.md` §5): un numero senza il suo device è una costante travestita da misura. Nota pratica sul mix Ampere+Blackwell: serve un driver che copra entrambe (570+) e un container toolkit che le esponga entrambe. **Domanda aperta all'owner**: il noleggio vast.ai prende entrambe le schede o solo la 3090? Se la 5060 Ti resta nostra, cade il vincolo di finestra per tutta la fascia 16 GB, ed è il cambiamento più grosso da quando ENV-W è a noleggio. Il controllo automatico di [#44](https://github.com/danielesalpietro/NORTHSTREAM/issues/44) (pre-check, run-check, post-run) è in piedi da v0.0.3: `preflight.sh --gpu [--require-vram-mib N] [--allow-contention]` rifiuta un run GPU su macchina condivisa con la causa esplicita, `bench/t0/run.sh` campiona fra un test e l'altro e scrive `manifest.json.exclusivity.detected` accanto al valore dichiarato con `--exclusivity`. Chi pianifica un run GPU su ENV-W continua comunque a chiedere prima all'owner in quale stato sia: il controllo automatico misura, non prenota la finestra (§2.1) |
 | **ENV-R** | RunPod (costi non vincolanti) | Tutto ciò che L e W non coprono: **matrici di eval parallele**, modelli oltre i 24 GB VRAM effettivi, run lunghi mentre L/W sono occupati | Le istanze sono **effimere**: nessun output sopravvive allo spegnimento se non recuperato (v. §3). I pod GPU standard sono container: **Docker-in-Docker non è garantito** → v. regola sotto |
 
 **Criterio di scelta** (in ordine): ENV-L se basta il profilo `core` e < 2 h; ENV-W se serve profilo full, soak, o la 3090; ENV-R per tutto il resto o quando L/W sono occupati.
@@ -279,6 +279,133 @@ Tutti i test sono script in `bench/t0/` con exit code, output JSON per-test, e n
 
 **T-SOAK-24h**: stack full 24 h con generatore attivo. Verifiche a fine run: (a) crescita punti Qdrant coerente con la retention configurata (non illimitata), (b) dimensione replication slot Postgres sotto soglia (`pg_replication_slots`), (c) zero eventi persi durante 50 `/compare` sparsi (contatore eventi DB vs buffer), (d) RSS totale per profilo dentro il tier dichiarato. Prima esecuzione sulla baseline **a scopo di misura** (i fallimenti attesi diventano i numeri "prima").
 
+#### 4.3.1 Le soglie di (b) e (d) — scritte dopo il primo soak, non prima
+
+Il soak parziale `20260827-1406-envw-c6b56d3` (427 campioni, 7,39 h) ha concluso
+**UNKNOWN** su (b) e (d), e la sessione che l'ha eseguito ha fatto la cosa giusta a
+non inventarsi una soglia da riga di comando: il piano ne dichiarava una solo per
+(a) e (c). Un verde senza referente sarebbe stato peggio di un UNKNOWN — vale la
+regola di CLAUDE.md §5 sul campo derivato che deve saper distinguere "falso" da
+"non l'ho potuto sapere". Le soglie si scrivono qui, **una volta sole**, e sono
+ancorate ai numeri già misurati.
+
+**(b) Replication slot.** Il modo di guasto vero non è una dimensione, è uno slot
+che smette di avanzare: il WAL si accumula finché il disco finisce. Serve quindi
+un criterio di *tendenza* più un tetto di sicurezza, non un tetto da solo.
+
+| Condizione | Verdetto |
+|---|---|
+| `active` vero in ≥ 99% dei campioni, **e** nessuna sequenza di ≥ 3 campioni consecutivi non-attivi, **e** WAL trattenuto max ≤ 256 MiB, **e** pendenza sulla seconda metà del run ≤ 1 MiB/h | OK |
+| Tetto o pendenza superati, o sequenza non-attiva ≥ 3 campioni | FAIL |
+| Anche un solo campione con `active` **null** (non misurabile) | UNKNOWN — e il run non può concludere OK su (b) |
+
+I 256 MiB non sono un numero di comodo: il run di riferimento ha misurato **0,060
+MiB di massimo** su 7,4 ore, quindi la soglia sta più di tre ordini di grandezza
+sopra il comportamento sano e intercetta uno slot bloccato molto prima che il disco
+ne risenta. Il primo soak, riletto con questo criterio, sarebbe **OK**: 427 campioni
+su 427 con `active` vero, tendenza piatta.
+
+**(a) Crescita dei punti Qdrant.** Il verdetto scritto nell'harness — `plateaued =
+any(points[i] <= points[i-1])`, OK se vero — **non può fallire**: un solo campione non
+crescente in tutta la corsa tinge di verde l'intero check. Dimostrato sui 427 campioni
+del soak #1 cambiando una riga: il verdetto passa da WARN a OK mentre la riga di
+dettaglio continua a stampare `+8353, 1130.9/h`, cioè si contraddice da sé. Il caso
+peggiore è però quello osservato **dal vivo** durante il soak #2: il conteggio è piatto
+**perché i dati vengono distrutti** (A-3 ha resettato il contatore di point-id e l'agent
+sta riscrivendo sopra il corpus esistente), e il check lo legge come "crescita limitata".
+Retention che funziona, sovrascrittura, pipeline morta e crescita illimitata con un
+singolo singhiozzo sono oggi **indistinguibili**, e tutte e quattro danno OK.
+
+Il conteggio dei punti **da solo non basta**: (a) deve leggere anche il flusso di eventi
+in ingresso, cioè lo stesso dato che alimenta (c). Un conteggio piatto significa una cosa
+se non entra niente e l'opposto se entrano mille eventi l'ora.
+
+| Condizione | Verdetto |
+|---|---|
+| Retention **configurata**: conteggio entro il target dichiarato e pendenza ≈ 0 sulla seconda metà del run | OK |
+| Conteggio piatto o calante **mentre** gli eventi nel DB crescono | **FAIL** — sovrascrittura o perdita di dati, il caso più grave, non il più tranquillo |
+| Retention configurata ma conteggio in crescita non limitata | FAIL |
+| **Nessuna retention configurata** (stato di oggi, A-3) | **WARN — atteso, mai OK** |
+
+L'ultima riga è deliberata: finché A-3 non è chiuso non esiste una retention, quindi
+non esiste una condizione che (a) possa legittimamente dichiarare OK. Un check che non
+può dare verde finché il difetto è aperto è un check onesto; uno che dà verde perché la
+serie è piatta è una decorazione.
+
+**(d) RSS totale.** Il tetto non è una costante: è **la somma dei `mem_limit`
+dichiarati nel compose** per i servizi del profilo in esame. Scritto così si
+aggiorna da solo quando il compose cambia, non richiede di ricordarsi di
+riallineare un numero in un documento, e misura la cosa che davvero interessa —
+se lo stack sta dentro ciò che dichiara di volere.
+
+| Condizione | Verdetto |
+|---|---|
+| RSS totale ≤ somma dei `mem_limit` del profilo, **e** nessun servizio oltre il 90% del proprio `mem_limit` per ≥ 10 campioni consecutivi, **e** `RestartCount` invariato per tutti i servizi dall'inizio alla fine del run | OK |
+| Tetto complessivo superato, o un servizio incollato al proprio tetto, o **`RestartCount` che cresce durante il run** | FAIL |
+| Uno o più servizi del profilo senza `mem_limit` **e senza esenzione dichiarata** | UNKNOWN — il tetto del profilo non è definito |
+
+**Esenzioni dichiarate** (correzione del 28/08, dopo T-PROF). La riga UNKNOWN qui
+sopra, presa alla lettera, rende (d) **inutile**: `ollama` non ha `mem_limit` per
+scelta deliberata — quanto gli serve lo decide il modello caricato, non il compose —
+e sta in ogni profilo, quindi (d) sarebbe UNKNOWN per sempre. È un difetto della
+regola, non della misura, ed è emerso perché la sessione ENV-W l'ha applicata alla
+lettera invece di aggirarla: la risposta giusta a una regola che degenera è
+correggerla, non ignorarla.
+
+Un servizio è **esente** se il compose dichiara l'assenza del tetto con un commento
+che ne spiega il motivo (oggi solo `ollama`). Con le esenzioni, (d) diventa:
+
+- il totale dei servizi **con** tetto sta dentro la somma dei loro `mem_limit`, **e**
+- nessuno di essi supera il 90% del proprio tetto per ≥ 10 campioni consecutivi, **e**
+- l'RSS di ogni servizio esente è **riportato a parte** nel report, con il suo valore
+  misurato, così che non sparisca dal conto pur non avendo un tetto contro cui fallire.
+
+Un'esenzione non dichiarata nel compose resta UNKNOWN: la differenza fra "non ha un
+tetto perché abbiamo deciso così" e "non ha un tetto perché ce ne siamo dimenticati"
+è esattamente ciò che (d) deve saper distinguere.
+
+La seconda condizione conta quanto la prima: un servizio che vive al 95% del proprio
+tetto non ha ancora fallito, ma è a un picco di distanza dall'OOM killer, e un soak
+che riporta solo il totale non lo vedrebbe mai.
+
+**La terza condizione — `RestartCount` — è stata aggiunta il 29/08, dopo che le prime
+due hanno mancato il servizio più rotto dei diciannove.** `open-webui` girava con un
+tetto sotto il proprio footprint: 3 474 riavvii in 7,4 ore, `Health` mai `healthy`. Con
+la sola condizione "incollato al tetto" il suo run più lungo sopra il 90% era **2
+campioni**, cioè passava. La ragione è che le prime due condizioni misurano *un servizio
+che preme contro il tetto*, non *un servizio che ci muore contro*: quello muore prima di
+poter premere, e il suo RSS mediano — 138 MiB — risulta **il più basso della sua fascia**.
+
+Corollario, che vale oltre questa regola: **un tetto troppo stretto si legge come poco
+consumo, non come troppo.** Chi cerca un `mem_limit` sbagliato guardando l'RSS non lo
+trova mai; si cerca con `RestartCount`.
+
+E non ci si fida di `OOMKilled`: `elasticsearch` ha passato l'intero soak a `OOMKilled:
+false` pur restartando 23 volte per esaurimento memoria, perché esce da sé sotto
+`ExitOnOutOfMemoryError`. Un campo che dice "non è la memoria" mentre è la memoria è
+peggio di un campo assente.
+
+Conseguenza sul run già archiviato: il primo soak resta **UNKNOWN su (d) per
+costruzione**, perché è stato eseguito su uno stack **precedente** ai `mem_limit` di
+[#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21) — non esisteva un
+tetto contro cui misurarlo. Non è un difetto del run: è ciò che lo rende il "prima"
+di P-5. I suoi numeri — mediana 14 174 MiB, picco 15 985 MiB, di cui Trino da 4 109
+a 7 119 MiB (+73%) — sono il termine di paragone, non un fallimento.
+
+#### 4.3.2 Regola metodologica: un confronto prima/dopo varia una cosa sola
+
+Il soak "dopo" va eseguito con **la stessa composizione di stack** del "prima" — 19
+container, cioè `core` + `lakehouse` + `governance` — e stessa cadenza di
+campionamento. Dall'introduzione dei profili (O4.1) un `docker compose up` nudo
+avvia il solo `core`: un "dopo" lanciato così misurerebbe un sistema diverso, e la
+differenza osservata sarebbe dominata dai sette container che mancano invece che dai
+tetti che sono stati aggiunti. L'unica variabile che deve cambiare fra i due run è
+la configurazione sotto esame (`jvm.config` e `mem_limit`).
+
+Vale anche al contrario: la misura di T-PROF sul profilo `core` **non** è il "dopo"
+di questo soak, è un'altra misura con un altro scopo (la riga della tabella tier).
+Le due non si confrontano fra loro.
+
 ---
 
 ## 5. CI / Workflow
@@ -321,7 +448,7 @@ Ogni release: branch `release/vX.Y.Z` da `develop` → fix → CI verde → run 
 | **v0.0.0-baseline** | Baseline | Solo tag su `5eb456a` + primo run T0 completo | — | Report baseline committato: è il contratto di partenza |
 | **v0.0.1** | Harness & verità | `bench/` + 3 workflow CI + mock-ollama + fix documentali O2 (README, demo-script, layout, License, rimozione endpoint 9092 dalla tabella) + `.env`→`.env.example` + merge di `docs/review_tecnica.md` e di questo piano in develop | **T0.12** | T0.1–T0.5 identici alla baseline (prova che il harness non altera il comportamento); ci-smoke verde al primo colpo |
 | **v0.0.2** | Raggiungibilità & riproducibilità | Doppio listener Kafka (interno 9092 / esterno 29092), pin versione+digest di tutte le immagini, binding `127.0.0.1`, script preflight (`vm.max_map_count`, RAM disponibile, GPU) | **T0.6** | Nuovo T-REPRO: due `docker compose pull` a distanza di giorni risolvono gli stessi digest; preflight fallisce con messaggio chiaro su host non conforme |
-| **v0.0.3** | Profili & tier onesti | Compose profiles `core`/`lakehouse`/`governance`, `mem_limit` per servizio, `trino/catalog/postgres.properties` + config memoria Trino, tabella tier del README riscritta sui numeri misurati, **esclusività dell'host** ([#44](https://github.com/danielesalpietro/NORTHSTREAM/issues/44)): pre-check che rifiuta un run GPU su macchina condivisa, campionamento durante il run, campo `exclusive`/`shared`/`unknown` nel `manifest.json` | **T0.7** | Nuovo T-PROF: profilo `core` completo con RSS totale ≤ 14 GB su ENV-L (misurato via `docker stats`, registrato nel manifest) |
+| **v0.0.3** | Profili & tier onesti | Compose profiles `core`/`lakehouse`/`governance`, `mem_limit` per servizio, `trino/catalog/postgres.properties` + config memoria Trino, tabella tier del README riscritta sui numeri misurati, **esclusività dell'host** ([#44](https://github.com/danielesalpietro/NORTHSTREAM/issues/44)): pre-check che rifiuta un run GPU su macchina condivisa, campionamento durante il run, campo `exclusive`/`shared`/`unknown` nel `manifest.json` | **T0.7** | **T-PROF in due parti** (v. riga ENV-W): **(1) misura dei tetti su ENV-W** — profilo `core` completo, somma degli RSS ≤ 14 GB con i `mem_limit` dichiarati, via `docker stats --no-stream`, registrata nel manifest; **(2) conferma comportamentale su ENV-L** — che lo stesso profilo *giri* davvero su 32 GB con WSL2, più le righe VRAM del tier 16 GB e il collaudo di `preflight.ps1`. La (1) chiude l'aritmetica, la (2) chiude il claim rivolto a chi ha una macchina come quella |
 | **v0.0.4** | Agent robusto | Point-id da `(topic,partition,offset)`, timestamp nel payload + filtro recency in query, retrieval con `Filter` payload (site) al posto del boost keyword (che viene rimosso), `/health` con check dipendenze, `group_id` Kafka, logging strutturato, `query_points` al posto della API deprecata | **T0.8, T0.9, T0.10, T0.11** | EVAL pre/post su ENV-W: Q2 ↑ senza Q1 ↓, hallucination_rate ≤ baseline; primo T-SOAK-24h verde su (a),(b),(c) |
 | **v0.0.5** | Governance minima | Ingestion OpenMetadata per Postgres e Trino (container ingestion o job one-shot), asset e lineage visibili | Nuovo **T-GOV**: API OpenMetadata restituisce > 0 tabelle per entrambi i servizi e almeno 1 edge di lineage | Profilo `governance` documentato con costo RAM misurato |
 | **v0.0.6** | **Casi d'uso e Explain Change** | Generatore che produce **sequenze controllate** — baseline, sviluppo, impatto, periodo tranquillo (**G-3**: stabilimenti che producono linee, anomalie che si raggruppano, clienti con storico); question set EVAL riscritto sulle sei classi U1–U6; **O9.1** — `detect_changes(...)` fuori dall'agent, `ChangeFact` strutturati, policy di salienza dichiarata in file, tre livelli di spiegazione separati (§1.1); demo-script **generato** dai casi d'uso | Nuovi **U-test**: U1–U3 rispondono con i fatti attesi; **U4 e U5 sono i gate veri** — nessuna invenzione su dato assente, nessun allarme inventato nel periodo tranquillo; i **sei criteri EVAL di O9** (§4.2) tutti verdi, con i tre negativi asseriti separatamente | Il demo-script non è più scritto a mano: se un caso d'uso non passa, la demo non si fa. Criterio di accettazione di O9.1: **sostituire il produttore di `ChangeFact` non deve toccare agent, EVAL e demo-script** — se li tocca, la Python non è una reference implementation ma un'architettura parallela. **Debito documentale del README** (Roadmap, riga Flink della Layer status, contratto `ChangeFact`, demo-script generato) elencato in [#43](https://github.com/danielesalpietro/NORTHSTREAM/issues/43) e nel logbook di fase: si paga nel release branch, con T0.12 verde dopo la modifica |

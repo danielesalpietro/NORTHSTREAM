@@ -21,6 +21,14 @@
 #   --expected <file>   expectations file (default: expected/current.json)
 #   --report <dir>      where to write the report (default: results/<RUN_ID>)
 #   --env <id>          environment tag for the RUN_ID (default: $NS_ENV or envx)
+#   --exclusivity exclusive|shared|unknown
+#                       declare whether this host was ours alone for this run
+#                       (issue #44), default unknown. This is the operator's
+#                       word; run.sh separately samples the GPU between every
+#                       test and reports its own detected verdict alongside
+#                       it in manifest.json.exclusivity — the two are allowed
+#                       to disagree, and both get recorded, never merged into
+#                       one number that hides the disagreement.
 #   --list              print the suite composition and exit
 #
 # Exit code: 0 when no test FAILs, 1 otherwise. XPASS and SKIP are reported but
@@ -37,6 +45,7 @@ EXPECTED_FILE="$HARNESS_DIR/expected/current.json"
 REPORT_DIR=""
 ENV_TAG="${NS_ENV:-envx}"
 LIST_ONLY="no"
+DECLARED_EXCLUSIVITY="unknown"
 
 # Hard ceiling per test, so one wedged test cannot consume the whole CI budget.
 NS_TEST_TIMEOUT="${NS_TEST_TIMEOUT:-600}"
@@ -60,11 +69,17 @@ while (($#)); do
         --expected) EXPECTED_FILE="$2"; shift 2 ;;
         --report)   REPORT_DIR="$2"; shift 2 ;;
         --env)      ENV_TAG="$2"; shift 2 ;;
+        --exclusivity) DECLARED_EXCLUSIVITY="$2"; shift 2 ;;
         --list)     LIST_ONLY="yes"; shift ;;
-        -h|--help)  sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)  sed -n '2,35p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)          echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
+
+case "$DECLARED_EXCLUSIVITY" in
+    exclusive|shared|unknown) ;;
+    *) echo "--exclusivity must be exclusive, shared, or unknown (got: $DECLARED_EXCLUSIVITY)" >&2; exit 2 ;;
+esac
 
 case "$SUITE" in
     ci)     TESTS="$SUITE_CI" ;;
@@ -195,7 +210,36 @@ echo "expected: $EXPECTED_FILE"
 echo "report:   $REPORT_DIR"
 echo
 
+# One host-exclusivity sample (issue #44) between test id and the next: never
+# gates, never aborts the suite (a run-check must not kill the run it is
+# measuring — the harm the plan warns against is a 24h soak aborted at hour
+# 23 by a tenant showing up). A sampler that itself crashes is recorded as an
+# unknown sample, not silently dropped and not treated as "clean".
+sample_exclusivity() {
+    local test_id="$1" ts gpu_json ram_kb ram_mib=""
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    gpu_json="$(python3 "$HARNESS_DIR/../lib/gpu_exclusivity.py" 2>/dev/null)"
+    if [[ -z "$gpu_json" ]]; then
+        gpu_json='{"state":"unknown","reason":"gpu_exclusivity.py produced no output","gpu_free_mib":null,"foreign_used_mib":null,"foreign_process_count":null}'
+    fi
+    if [[ -r /proc/meminfo ]]; then
+        ram_kb="$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)"
+        [[ -n "$ram_kb" ]] && ram_mib=$(( ram_kb / 1024 ))
+    fi
+    NS_GPU_JSON="$gpu_json" NS_TEST_ID="$test_id" NS_TS="$ts" NS_RAM="$ram_mib" python3 -c '
+import json, os
+ram_raw = os.environ.get("NS_RAM", "")
+print(json.dumps({
+    "test_id": os.environ["NS_TEST_ID"],
+    "ts": os.environ["NS_TS"],
+    "gpu": json.loads(os.environ["NS_GPU_JSON"]),
+    "ram_available_mib": int(ram_raw) if ram_raw.isdigit() else None,
+}))
+'
+}
+
 declare -a ROWS=()
+declare -a EXCLUSIVITY_SAMPLES=()
 blocking=0
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -210,6 +254,9 @@ for id in $TESTS; do
 
     expected="$(expected_for "$id")"
     echo "--- $id ($(basename "$script")) — expected: $expected"
+
+    excl_sample="$(sample_exclusivity "$id" 2>/dev/null || true)"
+    [[ -n "$excl_sample" ]] && EXCLUSIVITY_SAMPLES+=("$excl_sample")
 
     start="$(date +%s)"
     # No single test may hang the suite: a wedged probe becomes a KO with a
@@ -247,12 +294,22 @@ print(json.load(open(sys.argv[1])).get('summary', ''))
     ROWS+=("$id|$verdict|$expected|$duration|$summary")
 done
 
+# One last sample after the final test, so contention that appeared right at
+# the end of the run (not caught between two earlier tests) is not missed.
+final_sample="$(sample_exclusivity "final" 2>/dev/null || true)"
+[[ -n "$final_sample" ]] && EXCLUSIVITY_SAMPLES+=("$final_sample")
+
 finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # What the stack was made of, so the run can be reproduced or its differences
 # explained later (docs/piano_ricovero.md section 3).
 env_file="$(mktemp)"
 collect_environment "$env_file"
+
+# Host-exclusivity samples (issue #44) collected once between every test —
+# see sample_exclusivity() above. One JSON object per line.
+excl_file="$(mktemp)"
+printf '%s\n' "${EXCLUSIVITY_SAMPLES[@]}" >"$excl_file"
 
 # manifest.json — the machine-readable record of this run.
 {
@@ -277,6 +334,53 @@ for row in lines[8:]:
 counts = {}
 for entry in results:
     counts[entry['verdict']] = counts.get(entry['verdict'], 0) + 1
+
+# Host exclusivity (issue #44). 'declared' is the operator's word
+# (--exclusivity, default unknown, never inferred). 'detected' is this
+# script's own read of the per-test GPU samples: 'shared' if any sample saw a
+# foreign GPU process, 'exclusive' only if every sample positively confirmed
+# clean, 'unknown' otherwise (nvidia-smi/docker unavailable, or no samples at
+# all — e.g. a suite with zero tests). The two are recorded side by side,
+# never collapsed into one value: an operator who says 'exclusive' on a host
+# this script detects as 'shared' is exactly the disagreement worth keeping.
+excl_samples = []
+try:
+    with open(sys.argv[3], encoding='utf-8') as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                excl_samples.append(json.loads(line))
+except (OSError, json.JSONDecodeError):
+    excl_samples = []
+
+def _minmax(values):
+    return {'min': min(values), 'max': max(values)} if values else None
+
+gpu_states = [s.get('gpu', {}).get('state') for s in excl_samples]
+gpu_free = [s['gpu']['gpu_free_mib'] for s in excl_samples if s.get('gpu', {}).get('gpu_free_mib') is not None]
+foreign_used = [s['gpu']['foreign_used_mib'] for s in excl_samples if s.get('gpu', {}).get('foreign_used_mib') is not None]
+ram_avail = [s['ram_available_mib'] for s in excl_samples if s.get('ram_available_mib') is not None]
+first_shared = next((s for s in excl_samples if s.get('gpu', {}).get('state') == 'shared'), None)
+
+if not gpu_states:
+    detected = 'unknown'
+elif any(st == 'shared' for st in gpu_states):
+    detected = 'shared'
+elif all(st == 'exclusive' for st in gpu_states):
+    detected = 'exclusive'
+else:
+    detected = 'unknown'
+
+exclusivity = {
+    'declared': sys.argv[4],
+    'detected': detected,
+    'gpu_free_mib': _minmax(gpu_free),
+    'gpu_foreign_used_mib': _minmax(foreign_used),
+    'ram_available_mib': _minmax(ram_avail),
+    'contention_first_seen': {'test': first_shared['test_id'], 'ts': first_shared['ts']} if first_shared else None,
+    'samples': len(excl_samples),
+}
+
 json.dump({
     'run_id': run_id,
     'suite': suite,
@@ -287,14 +391,18 @@ json.dump({
     'started_at': started,
     'finished_at': finished,
     'stack': json.load(open(sys.argv[2])) if len(sys.argv) > 2 else {},
+    'exclusivity': exclusivity,
     'counts': counts,
     'results': results,
 }, open(sys.argv[1], 'w'), indent=2)
 print(json.dumps(counts))
-" "$REPORT_DIR/manifest.json" "$env_file" >"$REPORT_DIR/.counts"
+with open(sys.argv[5], 'w', encoding='utf-8') as fh:
+    json.dump(exclusivity, fh)
+" "$REPORT_DIR/manifest.json" "$env_file" "$excl_file" "$DECLARED_EXCLUSIVITY" "$REPORT_DIR/.exclusivity" >"$REPORT_DIR/.counts"
 
 counts="$(cat "$REPORT_DIR/.counts")"
-rm -f "$REPORT_DIR/.counts" "$env_file"
+exclusivity_json="$(cat "$REPORT_DIR/.exclusivity" 2>/dev/null || echo '{}')"
+rm -f "$REPORT_DIR/.counts" "$REPORT_DIR/.exclusivity" "$env_file" "$excl_file"
 
 # summary.md — the human-readable table that goes into docs/runs/.
 {
@@ -314,6 +422,8 @@ rm -f "$REPORT_DIR/.counts" "$env_file"
     done
     echo
     echo "Conteggi: \`$counts\`"
+    echo
+    echo "**Esclusività host (#44)**: \`$exclusivity_json\`"
 } >"$REPORT_DIR/summary.md"
 
 # SHA256SUMS last, over everything else: an archive nobody can verify is not an

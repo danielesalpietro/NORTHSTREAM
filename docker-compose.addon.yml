@@ -21,6 +21,7 @@ services:
     image: qdrant/qdrant:v1.19.0@sha256:057ee3a8da769fe7310dd3537b4dc7583bf87a95ce8ac43c0af5a46bc580d1fc
     container_name: northstream-qdrant
     restart: unless-stopped
+    mem_limit: 512m
     ports:
       - "127.0.0.1:6333:6333"
       - "127.0.0.1:6334:6334"
@@ -31,6 +32,7 @@ services:
     build: ./stream-agent
     container_name: northstream-stream-agent
     restart: unless-stopped
+    mem_limit: 512m
     ports:
       - "127.0.0.1:8500:8500"
     environment:
@@ -49,6 +51,7 @@ services:
     build: ./data-generator
     container_name: northstream-data-generator
     restart: unless-stopped
+    mem_limit: 128m
     environment:
       DB_HOST: postgres
       DB_PORT: "5432"

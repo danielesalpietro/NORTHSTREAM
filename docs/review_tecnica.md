@@ -67,6 +67,13 @@ Dopo la ristrutturazione del catalogo Bitnami (Broadcom, agosto 2025), il namesp
 **P-5 [MAJOR] — Il tier "Minimal 16 GB" è con ogni probabilità sotto-dimensionato, e nulla nel compose lo fa rispettare.**
 Lo stack completo con addon è ~18 container di cui almeno 6 JVM (Kafka, Debezium Connect, Flink ×2, Trino, OpenMetadata) più Elasticsearch (`-Xmx1g`, RSS reale ~2 GB) più Ollama con un modello caricato. Trino da solo, senza configurazione di memoria (assente, visto che `trino/` non esiste), ha default JVM pensati per macchine ben più grandi. La stima onesta per lo stack completo è 20–24 GB — coerente, ironicamente, con il `.wslconfig` del tier *Recommended* che assegna 20 GB. Inoltre nessun servizio ha `mem_limit`/`deploy.resources.limits` (unica eccezione: heap ES), quindi su Linux nativo i "tier" non esistono a runtime: sono documentazione. O si abbassa il claim del tier Minimal, o si crea un profilo ridotto che lo renda vero (v. §4.3, che è la strada migliore).
 
+**P-5, misurato — la crescita che la baseline non poteva vedere. [Aggiunto il 27/08/2026 dai campioni del soak parziale su ENV-W.]**
+Sei ore di campionamento a intervallo di 60 s trasformano la stima in una curva, e il risultato è più netto della stima. Stack pieno **senza** `mem_limit`: **14,26 GiB di mediana**, con **Trino a 5,97 GiB, il 41% del totale**. Ma il numero che conta non è il livello, è **la derivata**: Trino è cresciuto da **4,1 a 6,8 GiB in cinque ore, senza fermarsi**, mentre Elasticsearch e Kafka — che hanno l'heap fissato — restano piatti per tutta la serie. È la dimostrazione diretta del meccanismo che P-5 ipotizzava: **una JVM senza tetto si dimensiona sulla RAM dell'host** (235 GiB su ENV-W), e non converge.
+
+**Conseguenza retroattiva, che vale più della misura stessa**: il run di riferimento del 26/08 misurava **9,52 GiB per 19 container**, ed è il numero che abbiamo usato per due giorni come footprint dello stack. Quella lettura è stata presa **poco dopo l'avvio**, non a regime: non è sbagliata, è **una misura a freddo di una grandezza che cresce**. Chi la citasse come "quanto pesa NORTHSTREAM" sbaglierebbe del 50%. Il report resta valido per ciò che misurava — gli esiti dei test — e va **annotato**, non riscritto.
+
+È anche il caso da manuale per cui il piano §4.3 prescrive un soak: nessuna suite di test che parte, misura e chiude in quindici minuti può vedere una grandezza che impiega ore a manifestarsi.
+
 **P-6 [MAJOR] — Elasticsearch su Linux nativo: manca il prerequisito `vm.max_map_count`.**
 ES 8.x in container richiede `vm.max_map_count ≥ 262144`; Docker Desktop/WSL2 lo preimposta, Linux nativo tipicamente no → il container muore in bootstrap loop e con lui OpenMetadata (che dipende da ES healthy). Il README ha una sezione prerequisiti dettagliata sui tier hardware e non menziona questo, che è la prima causa concreta di "non parte" per l'utente Linux.
 
@@ -117,6 +124,18 @@ Il payload dei punti Qdrant è `{"text", "topic"}`: nessun timestamp filtrabile.
 
 **A-3 [MAJOR] — ID dei punti: contatore in RAM contro storage persistente = collisioni garantite.**
 `_point_id` riparte da 0 a ogni riavvio del container, mentre `qdrant_data` è un volume persistente: al secondo avvio l'upsert **sovrascrive** i punti 1..N della sessione precedente mescolando vecchio e nuovo. Insieme ad A-2 produce uno stato del vector store non ricostruibile. Fix elegante e idempotente: id deterministico da `(topic, partition, offset)` — replay sicuri gratis; alternativa banale: `uuid4` (ma perde l'idempotenza). Contestualmente: crescita senza TTL né cleanup (~29k punti/giorno a un evento/3s), e `qdrant.search()` è deprecato in qdrant-client 1.11 a favore di `query_points`.
+
+> **Osservato in produzione il 28/08, e la prima spiegazione era sbagliata.** Durante
+> il soak #2 il conteggio dei punti Qdrant risultava **fermo**. L'ipotesi immediata —
+> "l'agent è bloccato" — era falsa: l'agent lavora, e **sovrascrive**. Prova diretta:
+> il punto `id=3` porta un evento delle **13:41:55Z di oggi**, mentre `id=27413` ne
+> porta ancora uno delle **12:31Z** — il contatore è ripartito da zero e sta risalendo
+> sopra il corpus esistente. Non è "crescita illimitata": è **distruzione silenziosa
+> di dati**, e si presenta con la faccia più rassicurante possibile, un conteggio
+> piatto. Conseguenza sul piano: il check (a) del soak non può dichiarare OK su una
+> serie piatta senza guardare il flusso in ingresso (`docs/piano_ricovero.md` §4.3.1),
+> e A-3 sale di priorità dentro v0.0.4 — non è igiene dello storage, è integrità del
+> corpus su cui il RAG risponde.
 
 **A-4 [MAJOR] — Embedding sincrono nel hot path del consumer, in contesa con la generazione.**
 Ogni evento = una chiamata HTTP bloccante a Ollama (timeout 30 s) dentro il loop del consumer. Ollama serve *anche* le generazioni di `/compare` (fino a 120 s) sulla stessa istanza: durante una risposta il thread consumer si accoda o va in timeout, e l'evento viene **perso per sempre** con un `print` ("embedding/upsert failed") — niente retry, niente coda, e con `auto_offset_reset="latest"` senza `group_id` niente possibilità di recupero. Al ritmo attuale (un evento ogni ~3 s) il difetto è latente; alzare `INTERVAL_SECONDS` o fare più domande in parallelo durante un workshop lo rende visibile. Un buffer interno con embedding batch fuori dal loop di consumo sarebbe coerente con la taglia del progetto.

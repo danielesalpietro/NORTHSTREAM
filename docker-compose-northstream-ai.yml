@@ -8,6 +8,7 @@ services:
     image: nginx:alpine
     container_name: northstream-landing
     restart: unless-stopped
+    mem_limit: 64m
     ports:
       - "127.0.0.1:8000:80"
     volumes:
@@ -26,6 +27,7 @@ services:
     container_name: northstream-kafka
     hostname: kafka
     restart: unless-stopped
+    mem_limit: 1536m
     ports:
       - "127.0.0.1:9092:9092"
       - "127.0.0.1:29092:29092"
@@ -61,6 +63,7 @@ services:
     image: provectuslabs/kafka-ui:v0.7.2@sha256:8f2ff02d64b0a7a2b71b6b3b3148b85f66d00ec20ad40c30bdcd415d46d31818
     container_name: northstream-kafka-ui
     restart: unless-stopped
+    mem_limit: 512m
     ports:
       - "127.0.0.1:8088:8080"
     environment:
@@ -69,18 +72,28 @@ services:
       KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8080/apis/ccompat/v7
       KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: debezium-connect
       KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://debezium-connect:8083
+    # schema-registry is lakehouse-profile, not core (see its own comment):
+    # kafka-ui only lists it as an optional schema-registry endpoint in its
+    # environment above, it does not hard-require it to start. A depends_on
+    # here would make kafka-ui (core) require a lakehouse-only service,
+    # which Compose rejects when core runs alone (P-5, issue #21).
     depends_on:
       kafka:
         condition: service_healthy
-      schema-registry:
-        condition: service_started
       debezium-connect:
         condition: service_started
 
   schema-registry:
+    # Schema governance is scenography (review §2: Debezium runs with
+    # schemas.enable=false, nothing ever registers a schema here). Kept in
+    # the lakehouse profile rather than core; kafka-ui still depends on it,
+    # so `--profile core` alone still starts it via that dependency (Compose
+    # does not gate depends_on by profile) — declared here, not a surprise.
     image: apicurio/apicurio-registry:3.0.9
     container_name: northstream-schema-registry
     restart: unless-stopped
+    mem_limit: 512m
+    profiles: ["lakehouse"]
     ports:
       - "127.0.0.1:8081:8080"
     environment:
@@ -97,6 +110,7 @@ services:
     image: postgres:16
     container_name: northstream-source-postgres
     restart: unless-stopped
+    mem_limit: 512m
     ports:
       - "127.0.0.1:5432:5432"
     environment:
@@ -121,6 +135,7 @@ services:
     image: adminer:5.5.1@sha256:890cffec7caa20159fb6f68c1a521b2e5879f7314f4845d4ebca7cc1cf145971
     container_name: northstream-adminer
     restart: unless-stopped
+    mem_limit: 128m
     ports:
       - "127.0.0.1:8090:8080"
     environment:
@@ -132,6 +147,12 @@ services:
     image: debezium/connect:2.7.3.Final
     container_name: northstream-debezium-connect
     restart: unless-stopped
+    # 1536m, not 1024m like other single-purpose JVM services here: Kafka
+    # Connect workers carry the REST layer, converters and the Postgres
+    # plugin on top of the worker heap, and this container is exercised
+    # under real CDC load in ci-smoke on every push — an estimate that is
+    # too tight fails closed as a mysterious OOM-kill, not a readable error.
+    mem_limit: 1536m
     ports:
       - "127.0.0.1:8083:8083"
     environment:
@@ -161,6 +182,8 @@ services:
     image: flink:1.19.1-scala_2.12
     container_name: northstream-flink-jobmanager
     restart: unless-stopped
+    mem_limit: 1024m
+    profiles: ["lakehouse"]
     ports:
       - "127.0.0.1:8082:8081"
     command: jobmanager
@@ -171,6 +194,8 @@ services:
     image: flink:1.19.1-scala_2.12
     container_name: northstream-flink-taskmanager
     restart: unless-stopped
+    mem_limit: 1024m
+    profiles: ["lakehouse"]
     depends_on:
       - flink-jobmanager
     command: taskmanager
@@ -185,6 +210,8 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: northstream-minio
     restart: unless-stopped
+    mem_limit: 512m
+    profiles: ["lakehouse"]
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
@@ -198,6 +225,8 @@ services:
   create-minio-bucket:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     container_name: northstream-create-minio-bucket
+    mem_limit: 64m
+    profiles: ["lakehouse"]
     depends_on:
       - minio
     entrypoint: >
@@ -214,10 +243,17 @@ services:
     image: trinodb/trino:463
     container_name: northstream-trino
     restart: unless-stopped
+    # 2560m gives ~512m of headroom above the 2G JVM heap fixed in
+    # trino/etc/jvm.config (metaspace, native buffers, thread stacks) — the
+    # only mem_limit in this file grounded in an explicit setting rather
+    # than a bare estimate (P-2/P-5, issue #22).
+    mem_limit: 2560m
+    profiles: ["lakehouse"]
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - ./trino/catalog:/etc/trino/catalog:ro
+      - ./trino/etc/jvm.config:/etc/trino/jvm.config:ro
     depends_on:
       - minio
 
@@ -228,6 +264,8 @@ services:
     image: postgres:16
     container_name: northstream-openmetadata-db
     restart: unless-stopped
+    mem_limit: 512m
+    profiles: ["governance"]
     environment:
       POSTGRES_USER: openmetadata
       POSTGRES_PASSWORD: openmetadata
@@ -244,6 +282,17 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
     container_name: northstream-elasticsearch
     restart: unless-stopped
+    # 2048m. The previous 1536m looked grounded -- "~512m of headroom above
+    # -Xmx1g" -- but the arithmetic forgot direct memory: the JVM defaults
+    # MaxDirectMemorySize to the heap size / 2, so 1024 heap + 512 direct is
+    # 1536m exactly, leaving zero for metaspace, code cache, thread stacks and
+    # native allocations. Measured on ENV-W: 1529 MiB median, 99.5% of the cap,
+    # above 90% in 248 of 252 samples, memory.peak exactly 1536.0 MiB, and 23
+    # restarts over a 7.4h soak. OOMKilled stayed false throughout because ES
+    # exits itself under ExitOnOutOfMemoryError, so that field says nothing.
+    # 1024 heap + 512 direct + ~512 non-heap = 2048m (soak #2, 2026-08-28).
+    mem_limit: 2048m
+    profiles: ["governance"]
     environment:
       discovery.type: single-node
       ES_JAVA_OPTS: "-Xms1g -Xmx1g"
@@ -261,6 +310,8 @@ services:
   execute-migrate-all:
     image: openmetadata/server:1.7.0
     container_name: northstream-openmetadata-migrate
+    mem_limit: 1024m
+    profiles: ["governance"]
     command: ["./bootstrap/openmetadata-ops.sh", "migrate"]
     environment:
       DB_DRIVER_CLASS: org.postgresql.Driver
@@ -283,6 +334,11 @@ services:
     image: openmetadata/server:1.7.0
     container_name: northstream-openmetadata
     restart: unless-stopped
+    # 2048m: OpenMetadata's own docs recommend >=2G heap even for demo/dev
+    # deployments — an estimate sourced from the vendor's stated minimum,
+    # not a measurement (no ENV-L run has exercised this profile yet).
+    mem_limit: 2048m
+    profiles: ["governance"]
     ports:
       - "127.0.0.1:8585:8585"
     environment:
@@ -319,6 +375,12 @@ services:
   # AI / CHAT WITH DATA LAYER
   # ------------------------------------------------------------
   ollama:
+    # No mem_limit here on purpose: what Ollama needs is set by which model
+    # is loaded, and that is exactly the axis the tier system (examples/*/.env)
+    # already governs — from granite4:350m up to granite4:32b-a9b-h. A single
+    # fixed ceiling would either crash the optimal tier or be meaningless for
+    # the minimal one. Per-tier limits, if any, are for #23 to decide on
+    # measured numbers, not to guess here.
     image: ollama/ollama:0.33.1@sha256:075246f72d4109385b4a01c3ac8e9cbd26a0bcb21cd7aa30edbccd24e1b3180c
     container_name: northstream-ollama
     restart: unless-stopped
@@ -331,6 +393,13 @@ services:
     image: ghcr.io/open-webui/open-webui:v0.11.1@sha256:6bb1fbe8ab0a3e0456067f493044ffb66a30a65a34be47f6a5862176a370dd16
     container_name: northstream-open-webui
     restart: unless-stopped
+    # 512m put this container in a crashloop: RestartCount climbed 134 -> 142
+    # in forty seconds on ENV-W and Health never once reached healthy, while
+    # `docker stats` showed a low, sawtoothing 265 MiB average -- an undersized
+    # cap reads as low memory use, not high. Measured footprint once it can
+    # actually start: 679.7 MiB here, 687 MiB on the uncapped stack of soak #1.
+    # 1 GiB leaves ~1.5x over both readings (T-PROF, 2026-08-28).
+    mem_limit: 1024m
     ports:
       - "127.0.0.1:3000:8080"
     environment:

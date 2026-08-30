@@ -8,6 +8,196 @@ Regola (da `CLAUDE.md` §4): ogni commit che cambia comportamento aggiunge una r
 sotto `[Unreleased]` citando il finding o l'obiettivo che chiude; al rilascio la
 sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 
+## [Unreleased]
+
+*(Fase 3 — v0.0.4, agent robusto. In coda: point-id deterministici (A-3),
+timestamp nel payload e filtro recency (A-2), rimozione del boost keyword su
+`KNOWN_SITES` (A-1), `/health` reale (A-5).)*
+
+## [v0.0.3] — 2026-08-30
+
+*Stack onesto sulle risorse (obiettivo O4). Progression test dichiarato:
+**T0.7 PASS** su hardware vero, falsificato in tre casi. Tier riscritti sui
+numeri misurati: rimandati a [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23),
+che richiede ENV-L per le righe VRAM a 16 GB.*
+
+### Added
+- `bench/gate/run_caps_gate.sh` e `bench/gate/verdict_caps.py` — il **gate dei
+  tetti**: conferma a runtime che nessun servizio muore contro, o resta incollato
+  a, il proprio `mem_limit`. Le tre condizioni sono quelle di
+  `docs/piano_ricovero.md` §4.3.1(d), inclusa `RestartCount` invariato.
+  **Il runner si distacca da solo** (`setsid`, PPID 1): su ENV-W la sessione
+  interattiva è morta quattro volte in tre giorni, mentre il campionatore
+  distaccato del soak è sopravvissuto a entrambe le morti che ha visto — la
+  misura non deve dipendere da una sessione viva. **Verdetto separato dal run**,
+  così è rieseguibile sull'archivio quando la regola cambia (è esattamente ciò
+  che ha permesso di rigiudicare il soak #1 contro soglie scritte dopo).
+  Falsificato su tre archivi sintetici prima di essere creduto: rosso coi numeri
+  veri del 28/08 → **FAIL**, verde coi footprint misurati → **OK**, verde con un
+  container `unhealthy` → **UNKNOWN**, mai verde in silenzio (**P-5**,
+  [#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21),
+  [#24](https://github.com/danielesalpietro/NORTHSTREAM/issues/24)).
+
+- `trino/catalog/postgresql.properties` — catalogo JDBC verso il Postgres
+  operativo (`postgres:5432/sales`, utente `demo`). Il nome del file fissa
+  il nome del catalogo: **`postgresql`**, non `postgres` come lo cita di
+  sfuggita `docs/review_tecnica.md` §4.2 — vincolato dal test T0.7 e dalla
+  tabella `docs/piano_ricovero.md` §4.1, entrambi scritti prima di questa
+  sessione e già puntati su `postgresql.public.orders` (**P-2**,
+  [#22](https://github.com/danielesalpietro/NORTHSTREAM/issues/22)).
+  Chiude l'altra metà di P-2 — la prima, la directory `trino/catalog`
+  mancante, era già chiusa dal `.gitkeep` di P-12 in v0.0.2. **Non
+  verificato in questa sessione** (nessun demone Docker): verificabile solo
+  staticamente (`docker compose config`), il flip XFAIL→PASS di T0.7 resta
+  da misurare su ENV-L o nightly ENV-W — `bench/t0/expected/current.json`
+  **non è stato toccato** di proposito, per lo stesso motivo per cui non lo
+  fu per T0.6 finché non fu misurato con modelli veri (v0.0.2).
+- `trino/etc/jvm.config` (montato su `/etc/trino/jvm.config`, sola lettura)
+  — sostituisce l'heap percentuale di default dell'immagine
+  (`-XX:InitialRAMPercentage=80 -XX:MaxRAMPercentage=80`, che senza un
+  `mem_limit` di container dimensiona l'heap sull'80% della RAM **dell'host**,
+  non del laptop) con un heap fisso `-Xms1G -Xmx2G`, nello stile già in uso
+  per Elasticsearch (`-Xmx1g`). **Stima dichiarata, non misura**: 2G è
+  dimensionato per un catalogo singolo con due tabelle operative piccole e
+  nessun carico Iceberg/lakehouse dietro — i numeri veri sul profilo
+  `lakehouse` sono compito di [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23)
+  su ENV-L (P-2/P-5, §4.2-4.3 della review, issue #22).
+- `docker-compose-northstream-ai.yml`, `docker-compose.addon.yml`: profili
+  Compose `core` (nessun tag — sempre attivo, comportamento invariato di
+  default per chi passa i nomi servizio espliciti o nessun `--profile`),
+  `lakehouse` (Flink, MinIO, Trino, e lo schema registry Apicurio — v. nota
+  sotto) e `governance` (l'intero stack OpenMetadata: db, Elasticsearch, il
+  job di migrazione, il server) — **P-5**,
+  [#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21).
+  `docker compose --profile core up` avvia gli 11 servizi della pipeline che
+  funziona davvero (landing page, Kafka, Kafka UI, Postgres, Adminer,
+  Debezium Connect, Ollama, Open WebUI + l'addon: Qdrant, stream-agent,
+  data-generator) invece dei 19-21 di sempre.
+- `mem_limit` per **20 dei 21 servizi** del compose (P-5, issue #21). La
+  maggioranza sono **stime dichiarate**, non misure: derivate dal profilo
+  tipico della tecnologia (JVM di default, app leggere Python/Go/Node) per
+  un carico di laboratorio, non da un run osservato — i numeri misurati
+  arrivano da [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23)
+  su ENV-L. Due sole eccezioni sono ancorate a un valore reale invece che
+  a una sensazione: **Trino** (2560m, margine sopra l'heap fisso di 2G appena
+  introdotto) ed **Elasticsearch** (1536m, margine sopra `-Xmx1g`, l'unica
+  eccezione già vincolata dalla review). **Ollama è l'unico servizio senza
+  `mem_limit`, deliberatamente**: il suo fabbisogno dipende dal modello
+  caricato, cioè dal tier scelto (`examples/*/.env`, da 350m a 32b) — un
+  tetto fisso o farebbe crashare il tier `optimal` o sarebbe inutile per il
+  `minimal`; una decisione per-tier è compito di #23, non di questa sessione.
+  `debezium-connect` ha un margine più ampio (1536m, non 1024m come gli
+  altri singoli servizi JVM) perché è l'unico servizio JVM esercitato sotto
+  carico CDC reale a ogni push da `ci-smoke`: una stima troppo stretta lì
+  fallirebbe come un OOM-kill silenzioso, non come un errore leggibile.
+
+### Fixed
+- `bench/lib/gpu_exclusivity.py` e `preflight.sh`: il controllo di capacità VRAM
+  di [#44](https://github.com/danielesalpietro/NORTHSTREAM/issues/44) sommava i
+  device. Su ENV-W, diventata **bi-GPU il 29/08** (3090 24 GB + 5060 Ti 16 GB),
+  con un tenant che occupa 22 GiB della 3090 la somma dichiara **18 260 MiB
+  liberi** mentre la scheda singola più libera ne ha **16 184**: un run che
+  dichiarava `--require-vram-mib 17000` passava il pre-check e moriva al
+  caricamento del modello. **Un modello gira su una scheda, non sulla somma.**
+  Ora `snapshot()` riporta `gpu_devices` per device, `gpu_count` e
+  `gpu_max_free_single_device_mib`, e il pre-check giudica su quest'ultimo.
+  Quando la somma basterebbe ma nessuna singola scheda ci sta, lo dice
+  esplicitamente invece di passare: lo split fra device non è mai stato
+  misurato da questo progetto, quindi non viene trattato come un fit. Lo stato
+  `exclusive`/`shared` non era intaccato — è per-processo, non aggregato.
+  Verificato con un `nvidia-smi` finto su tre scenari (due schede con tenant,
+  due libere, una sola: quest'ultimo identico a prima, nessuna regressione).
+
+- `docker-compose-northstream-ai.yml`: `elasticsearch` passa da `mem_limit: 1536m`
+  a **`2048m`**. Il tetto sembrava fondato — "~512m di margine sopra `-Xmx1g`" — ma
+  l'aritmetica dimenticava la **direct memory**: la JVM imposta `MaxDirectMemorySize`
+  a metà dell'heap, quindi 1024 di heap + 512 di direct fanno **esattamente 1536m**,
+  senza un byte per metaspace, code cache, stack dei thread e allocazioni native.
+  Misurato su ENV-W nel soak #2: **1 529 MiB di mediana, il 99,5% del tetto**, sopra
+  il 90% in 248 campioni su 252, `memory.peak` esattamente 1 536,0 MiB e **23 riavvii**
+  in 7,4 ore. `OOMKilled` è rimasto **`false`** per tutto il tempo, perché ES esce da
+  sé sotto `ExitOnOutOfMemoryError`: chi si fida di quel campo conclude che di problemi
+  di memoria non ce ne sono. Nuovo tetto = 1024 heap + 512 direct + ~512 non-heap
+  (**P-5**, [#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21)).
+
+- `docker-compose-northstream-ai.yml`: `open-webui` passa da `mem_limit: 512m` a
+  **`1024m`**. Il tetto stimato di [#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21)
+  stava **sotto il footprint misurato** e teneva il container in **crashloop**:
+  `RestartCount` da 134 a 142 in quaranta secondi su ENV-W, `Health` mai una volta
+  `healthy`. Il sintomo era ingannevole — `docker stats` mostrava una media **bassa**
+  di 265 MiB a dente di sega, perché **un tetto troppo stretto si legge come poco
+  consumo, non come troppo**. Footprint reale una volta che il container parte:
+  679,7 MiB (T-PROF) e 687 MiB sullo stack senza tetti del soak #1; 1 GiB lascia
+  ~1,5× su entrambe le letture (**P-5**, [#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21)).
+
+- `bench/t0/tests/t0.07_trino_catalog.sh` — l'asserzione sul conteggio non
+  poteva fallire. Il comando univa stderr a stdout (`2>&1`) e ricavava il
+  numero da `head -1 | tr -dc '0-9'`: la prima riga è il WARNING di jline del
+  CLI Trino, e il suo timestamp sopravvive allo strip come un intero positivo
+  grande. Una query che restituiva **0 righe** veniva quindi valutata **OK** —
+  dimostrato su ENV-W il 28/08. Ora stderr resta fuori dal valore (riportato
+  come osservazione, non parsato) e si accetta **solo** una riga che sia un
+  intero puro dopo aver tolto le virgolette del CLI, esattamente una. Il
+  merito del ritrovamento è della sessione ENV-W, che ha dichiarato il difetto
+  invece di appoggiarsi al verde (**P-2**, [#22](https://github.com/danielesalpietro/NORTHSTREAM/issues/22)).
+
+- `docker-compose-northstream-ai.yml`: `kafka-ui` dipendeva
+  (`depends_on: schema-registry: condition: service_started`) da un servizio
+  ora tag `lakehouse`. Compose rifiuta un servizio sempre-attivo che dipende
+  da un servizio dietro un profilo non richiesto — `--profile core` da solo
+  falliva con "depends on undefined service". `schema-registry` è comunque
+  solo un endpoint opzionale nell'ambiente di `kafka-ui`
+  (`KAFKA_CLUSTERS_0_SCHEMAREGISTRY`), non un requisito di avvio: la
+  dipendenza forte è stata rimossa, l'endpoint resta configurato e kafka-ui
+  mostra semplicemente quel pannello vuoto se Apicurio non gira (issue #21,
+  scoperto durante la validazione statica di questa sessione).
+- `start-addon.sh` / `start-addon.ps1`: senza modifica, l'introduzione dei
+  profili avrebbe cambiato silenziosamente il comportamento di default di
+  questi script da "avvia tutto" (19-21 container) a "avvia solo `core`"
+  (11), perché un `docker compose up` senza `--profile` attiva solo i
+  servizi non taggati. `ci-nightly` chiama `./start-addon.sh --gpu` e si
+  aspetta lo stack pieno per la suite `full` (T0.7 compreso) — esattamente
+  il rischio di regressione silenziosa che CLAUDE.md §5/il piano vietano.
+  Gli script ora passano **tutti e tre i profili di default**
+  (`core,lakehouse,governance`), preservando il comportamento di oggi, e
+  accettano `--profile <nome>[,<nome>...]` (`-Profile` in PowerShell) per
+  chi vuole esplicitamente lo stack snello (issue #21).
+
+### Added
+- **Esclusività dell'host (#44)** — pre-check, run-check, post-run, sui tre
+  momenti dichiarati dal piano. `bench/lib/gpu_exclusivity.py` (nuovo,
+  condiviso) risponde "la GPU è tutta nostra?" attribuendo ogni processo di
+  calcolo GPU (`nvidia-smi --query-compute-apps`) a un container di questo
+  compose project via match dell'id a 64 esadecimali in `/proc/<pid>/cgroup`
+  contro `docker ps --filter label=com.docker.compose.project=...`; un
+  processo non attribuibile è **foreign**, mai ignorato. Stato
+  `exclusive`/`shared`/`unknown` — mai un booleano che collassa "falso" su
+  "non l'ho potuto sapere" (CLAUDE.md §5): l'host senza `nvidia-smi` è
+  `unknown` ("non applicabile"), non `shared`.
+  - **Pre-check**: `preflight.sh`/`preflight.ps1` `--gpu` guadagnano
+    `--require-vram-mib N`, `--require-ram-mib N` (dichiarati dal
+    chiamante, mai inferiti da `--tier`) e `--allow-contention` (bypass
+    esplicito, sempre loggato). Rifiuta con causa/sintomo/rimedio quando la
+    VRAM libera o la RAM libera non coprono quanto dichiarato; su
+    `preflight.ps1` l'attribuzione per container non ha equivalente pulito
+    (Docker Desktop gira nella propria VM WSL2) ed è dichiarata come tale,
+    non finta.
+  - **Run-check**: `bench/t0/run.sh` campiona GPU/RAM fra un test e l'altro
+    (mai un demone in background: non deve mai poter uccidere la suite) e
+    registra il primo campione in stato `shared` (`contention_first_seen`),
+    senza abortire il run.
+  - **Post-run**: `manifest.json.exclusivity` — `declared` (da
+    `--exclusivity exclusive|shared|unknown`, default `unknown`, come già
+    su `feature/soak-harness` per il soak) e `detected` (calcolato dai
+    campioni), **mai fusi in un solo valore**: un operatore che dichiara
+    `exclusive` su un host che i campioni mostrano `shared` è esattamente
+    il disaccordo da preservare. Riga corrispondente in `summary.md` /
+    `docs/runs/<RUN_ID>.md`.
+  - I cinque report già archiviati in `docs/runs/` privi del campo
+    (precedenti a questa release, o su runner GitHub-hosted dove il
+    concetto non si applica nello stesso modo) sono **annotati** con
+    `unknown` in coda al file, non riscritti.
+
 ## [v0.0.2] — 2026-08-27
 
 **Che cosa rilascia questa versione**: raggiungibilità e riproducibilità dello

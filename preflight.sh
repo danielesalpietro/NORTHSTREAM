@@ -10,27 +10,58 @@
 #   - an existing kafka_data volume is writable by apache/kafka's user (P-11)
 #   - no root-owned/unwritable directories in the repo tree (P-12, P-13)
 #   - NVIDIA GPU visible, only with --gpu (mirrors start-addon.sh --gpu)
+#   - host exclusivity, only with --gpu (issue #44): is the GPU ours alone,
+#     is there enough RAM actually free (not just installed)? ENV-W is
+#     rented out on vast.ai outside maintenance windows, and a tenant's
+#     process is otherwise indistinguishable from a defect in this project.
 #
 # This is an explicit, separate step — NOT invoked automatically by
 # start-addon.sh. See CHANGELOG.md / the Fase 1 logbook for why.
 #
 # Usage: ./preflight.sh [--tier minimal|recommended|optimal] [--gpu]
+#                        [--require-vram-mib N] [--require-ram-mib N]
+#                        [--allow-contention]
+#
+# --require-vram-mib N   declare how much free VRAM this run needs (issue
+#                         #44); only checked with --gpu. Not inferred from
+#                         --tier: the examples/*/.env model choice is a
+#                         separate decision from what preflight enforces, and
+#                         a fabricated default would be a number nobody
+#                         actually declared. Default 0 — no requirement
+#                         declared, GPU exclusivity is reported, not gated.
+# --require-ram-mib N     declare how much RAM must actually be free (not
+#                         just installed) for this run to start. Default 0 —
+#                         same reasoning as above.
+# --allow-contention      start anyway on a host that looks shared. For a
+#                         run that is deliberately insensitive to resource
+#                         contention (issue #44) — a deliberate override,
+#                         never a silent one: every use is logged as WARN.
+#
 # Exit:  0 all checks pass; 1 at least one hard failure (see the messages).
 set -uo pipefail
 
 TIER="minimal"
 GPU="no"
+REQUIRE_VRAM_MIB=0
+REQUIRE_RAM_MIB=0
+ALLOW_CONTENTION="no"
 
 while (($#)); do
     case "$1" in
-        --tier) TIER="$2"; shift 2 ;;
-        --gpu)  GPU="yes"; shift ;;
+        --tier)               TIER="$2"; shift 2 ;;
+        --gpu)                GPU="yes"; shift ;;
+        --require-vram-mib)   REQUIRE_VRAM_MIB="$2"; shift 2 ;;
+        --require-ram-mib)    REQUIRE_RAM_MIB="$2"; shift 2 ;;
+        --allow-contention)   ALLOW_CONTENTION="yes"; shift ;;
         -h|--help)
-            sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
+
+case "$REQUIRE_VRAM_MIB" in ''|*[!0-9]*) echo "--require-vram-mib wants an integer (got: $REQUIRE_VRAM_MIB)" >&2; exit 2 ;; esac
+case "$REQUIRE_RAM_MIB" in ''|*[!0-9]*) echo "--require-ram-mib wants an integer (got: $REQUIRE_RAM_MIB)" >&2; exit 2 ;; esac
 
 # Floors mirror the hardware table in README.md ("Hardware & Model Tiers"):
 # keep the two in sync if the table ever changes.
@@ -45,6 +76,9 @@ fail=0
 warn() { printf 'WARN  %s\n' "$*" >&2; }
 err()  { printf 'FAIL  %s\n' "$*" >&2; fail=1; }
 ok()   { printf 'OK    %s\n' "$*"; }
+info() { printf 'INFO  %s\n' "$*"; }
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- vm.max_map_count (P-6): the first cause of "Elasticsearch never
 # becomes healthy" on native Linux, where Docker does not preset it the way
@@ -77,6 +111,42 @@ if [[ -n "$total_kb" ]]; then
     fi
 else
     warn "could not read total RAM on this host — skipping (README hardware table wants ${RAM_GB} GiB for tier '${TIER}')"
+fi
+
+# --- RAM actually free right now (issue #44) — a different fact from total
+# RAM above: a host with plenty of installed RAM can still have most of it
+# claimed by a vast.ai tenant. Only gated when the caller declares a need
+# (--require-ram-mib); otherwise this is descriptive, not a fabricated gate. ---
+if [[ -r /proc/meminfo ]]; then
+    avail_ram_kb="$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)"
+    if [[ -n "$avail_ram_kb" ]]; then
+        avail_ram_mib=$(( avail_ram_kb / 1024 ))
+        if (( REQUIRE_RAM_MIB > 0 )); then
+            if (( avail_ram_mib >= REQUIRE_RAM_MIB )); then
+                ok "RAM free: ${avail_ram_mib} MiB (>= ${REQUIRE_RAM_MIB} MiB declared with --require-ram-mib)"
+            elif [[ "$ALLOW_CONTENTION" == "yes" ]]; then
+                warn "RAM free: ${avail_ram_mib} MiB is below the ${REQUIRE_RAM_MIB} MiB this run declared it needs — starting anyway (--allow-contention)."
+            else
+                err "RAM free: only ${avail_ram_mib} MiB available; this run declared it needs ${REQUIRE_RAM_MIB} MiB free (--require-ram-mib). The host looks shared with another workload. Free RAM first, lower --require-ram-mib if the number was a guess, or pass --allow-contention to start anyway."
+            fi
+        else
+            info "RAM free: ${avail_ram_mib} MiB (no --require-ram-mib declared — descriptive only)"
+        fi
+    else
+        warn "could not read MemAvailable from /proc/meminfo — skipping the RAM-free check"
+    fi
+else
+    warn "/proc/meminfo not readable — skipping the RAM-free check (expected on native Windows/macOS)"
+fi
+
+# --- load average (issue #44): descriptive only. No threshold is declared
+# anywhere in the plan for "this load average means a shared host" — printing
+# an invented one would be exactly the "constant dressed up as a measurement"
+# CLAUDE.md section 5 warns against, so this is reported, never gated. ---
+if [[ -r /proc/loadavg ]]; then
+    load1="$(awk '{print $1}' /proc/loadavg)"
+    cores="$(nproc 2>/dev/null || echo '?')"
+    info "load average: ${load1} (1 min) on ${cores} core(s) — descriptive, no threshold declared"
 fi
 
 # --- free disk on the filesystem preflight.sh is run from (a proxy for
@@ -137,7 +207,6 @@ fi
 # outright with Permission denied, leaving the tree half-updated (P-13).
 # Scoped to directories: that is what actually blocks git and rmdir — a
 # read-only *file* the current user still owns does not.
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mapfile -t unwritable_dirs < <(find "$REPO_ROOT" -type d -not -writable 2>/dev/null)
 if (( ${#unwritable_dirs[@]} == 0 )); then
     ok "no root-owned or otherwise unwritable directories in the repository tree"
@@ -153,6 +222,68 @@ if [[ "$GPU" == "yes" ]]; then
         ok "GPU: $(nvidia-smi -L | head -1)"
     else
         err "GPU: --gpu was requested but 'nvidia-smi' is not available or reports no device. Install the NVIDIA driver (in WSL2: the NVIDIA driver for WSL, not a separate in-distro driver) before passing --gpu to start-addon.sh."
+    fi
+
+    # --- GPU exclusivity (issue #44): before the stack starts, nothing of
+    # ours should be on the GPU yet, so any usage/compute process this finds
+    # is by construction not ours — no container attribution needed here
+    # (bench/lib/gpu_exclusivity.py still does it, for reuse during a run in
+    # bench/t0/run.sh, where our own containers legitimately use the GPU).
+    if command -v python3 >/dev/null 2>&1; then
+        excl_json="$(python3 "$REPO_ROOT/bench/lib/gpu_exclusivity.py" 2>/dev/null || true)"
+        if [[ -z "$excl_json" ]]; then
+            warn "GPU exclusivity (#44): bench/lib/gpu_exclusivity.py produced no output — skipping"
+        else
+            read -r excl_state excl_free excl_fit excl_ndev excl_foreign excl_fcount excl_reason < <(NS_EXCL_JSON="$excl_json" python3 -c '
+import json, os
+d = json.loads(os.environ["NS_EXCL_JSON"])
+free = d["gpu_free_mib"] if d["gpu_free_mib"] is not None else "?"
+# What one model can actually get. A capacity check against the SUM of free
+# memory across devices is a false green: 2 GiB left on a busy 24 GiB card
+# plus an idle 16 GiB card sums to 18, and a 17 GiB model fits neither.
+fit = d.get("gpu_max_free_single_device_mib")
+fit = fit if fit is not None else "?"
+ndev = d.get("gpu_count") if d.get("gpu_count") is not None else "?"
+foreign = d["foreign_used_mib"] if d["foreign_used_mib"] is not None else "?"
+count = d["foreign_process_count"] if d["foreign_process_count"] is not None else "?"
+print(d["state"], free, fit, ndev, foreign, count, d["reason"].replace(" ", "_"))
+')
+            excl_reason="${excl_reason//_/ }"
+            case "$excl_state" in
+                unknown)
+                    warn "GPU exclusivity (#44): could not be determined — ${excl_reason}. Not treated as contention, only as an unmeasured host."
+                    ;;
+                exclusive)
+                    ok "GPU exclusivity (#44): exclusive — ${excl_reason}"
+                    ;;
+                shared)
+                    # Judged on the largest single device, not the sum: a model
+                    # runs on one card. With ENV-W's two GPUs since 2026-08-29,
+                    # comparing against the sum would pass a run that then dies
+                    # loading the model.
+                    if (( REQUIRE_VRAM_MIB > 0 )) && [[ "$excl_fit" != "?" ]] && (( excl_fit < REQUIRE_VRAM_MIB )); then
+                        split_note=""
+                        if [[ "$excl_free" != "?" ]] && (( excl_free >= REQUIRE_VRAM_MIB )); then
+                            split_note=" The ${excl_ndev} devices sum to ${excl_free} MiB free, which is enough only if the model is split across them — this project has never measured a split run, so it is not treated as a fit."
+                        fi
+                        if [[ "$ALLOW_CONTENTION" == "yes" ]]; then
+                            warn "GPU exclusivity (#44): shared — largest single device has ${excl_fit} MiB free across ${excl_ndev} GPU(s), ${excl_foreign} MiB held by ${excl_fcount} foreign process(es); this run declared it needs ${REQUIRE_VRAM_MIB} MiB.${split_note} Starting anyway (--allow-contention)."
+                        else
+                            err "GPU exclusivity (#44): ${excl_foreign} MiB of ${excl_fcount} foreign process(es) occupy the GPU(s); the largest single device has ${excl_fit} MiB free and this run declared it needs ${REQUIRE_VRAM_MIB} MiB (--require-vram-mib), so it will not fit on any one card.${split_note} Wait for the tenant to release the GPU, lower the model/tier, or pass --allow-contention to force a run that does not need the memory it asked for."
+                        fi
+                    else
+                        note="no --require-vram-mib declared, reporting only"
+                        (( REQUIRE_VRAM_MIB > 0 )) && note="largest single device (${excl_fit} MiB free of ${excl_free} MiB across ${excl_ndev} GPU(s)) covers the ${REQUIRE_VRAM_MIB} MiB this run declared"
+                        warn "GPU exclusivity (#44): shared — ${excl_reason} (${note})"
+                    fi
+                    ;;
+                *)
+                    warn "GPU exclusivity (#44): unrecognized state '${excl_state}' from gpu_exclusivity.py — treating as unknown"
+                    ;;
+            esac
+        fi
+    else
+        warn "python3 not available — skipping GPU exclusivity check (#44)"
     fi
 fi
 

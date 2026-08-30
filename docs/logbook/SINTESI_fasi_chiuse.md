@@ -105,3 +105,99 @@ non regge su corpus piccolo — e la collection era piccola *a causa di A-3*, un
 difetto che ne mascherava un altro; **P-5** stimava 20-24 GB contro 9,52 GiB
 misurati. È il funzionamento previsto del metodo: il report comanda sul documento.
 
+---
+
+## ESITO FASE 1 — chiusa il 2026-08-27 con il tag `v0.0.2` → `966422d`
+
+**Esito**: fase chiusa. Tag annotato `v0.0.2` → `966422d`, `develop` allineato col
+merge `cfc98f3`. Nove sub-issue chiuse (#16, #17, #18, #19, #20, #41, #42, #45, #46,
+#48). **È la prima release che cambia il comportamento del sistema**: v0.0.1 aveva
+aggiunto misura e verità documentale senza toccare lo stack.
+
+**Che cosa rilascia v0.0.2**: lo stack è raggiungibile dall'host come documentato e
+riproducibile nel tempo. **P-1, l'unico BLOCKER comportamentale della review, è chiuso
+nel comportamento** — non solo nel codice.
+
+**Numeri misurati** (tutti su ENV-W, in finestra di manutenzione dichiarata)
+- **T0.6 XFAIL → PASS con modelli veri**, in **due** nightly consecutive contro
+  `6b377a3` (run 33068899387 e 33069809809): probe `kcat` host-network che ottiene
+  `broker 1 at localhost:29092 (controller)`. T0.2 e T0.3 PASS in entrambe: il cambio
+  d'immagine Kafka non ha introdotto regressioni.
+- **`granite4:32b-a9b-h` entra nella 3090**: picco **19 788 MiB su 24 576**, 100% GPU,
+  margine 4,7 GiB, contesto 32k preallocato, 101 s a freddo e 1-3 s a caldo.
+  L'assunzione su cui poggia la matrice EVAL di beta1 non è più un'assunzione.
+- **P-11 quantificato**: con volume `kafka_data` della vecchia immagine, **46 restart**
+  in crash-loop; con volume fresco, **healthy in 23 s**. `bitnamilegacy/kafka:3.7.1`
+  gira `uid=1001 gid=0(root)`, `apache/kafka:4.3.1` gira `uid=1000 gid=1000`.
+- **Soak parziale** `20260827-1406-envw-c6b56d3` (~7 h, non T-SOAK-24h): campionatore
+  validato con 5 sonde contro `psql`, sempre concordi, forzando anche lo stato
+  inattivo. Divario DB/Qdrant alla partenza: 95.
+
+**Decisioni prese, con il perché e le alternative scartate**
+- **#17 prima di #16**: l'immagine definitiva prima dei listener, così la
+  configurazione è scritta una volta sola e T0.6 flippa sull'immagine finale.
+  *Scartata*: listener sull'immagine Bitnami e migrazione dopo — avrebbe significato
+  riscrivere la stessa configurazione due volte (i prefissi `KAFKA_CFG_*` e `KAFKA_*`
+  non sono intercambiabili) e far flippare il progression test su un'immagine
+  destinata a cambiare.
+- **Teardown `ci-nightly`: rimozione esplicita dei soli tre volumi di stato** che la
+  suite T0 esercita, al posto di `down -v`. *Scartata*: "tutti tranne `ollama_data`" —
+  i volumi di MinIO/OpenMetadata appartengono a servizi congelati e ripulirli non
+  aggiunge garanzie di test. *Scartata*: `ollama_data` come volume esterno, più robusto
+  ma con una procedura di primo avvio diversa; rimandata a issue separata.
+- **P-11 chiuso nel preflight, non solo con una nota di migrazione.** Motivo, di chi ha
+  eseguito la misura: *la nota la legge chi sospetta già un problema di aggiornamento;
+  chi non lo sospetta vede solo un broker che non parte.* La nota resta come
+  complemento, non come sostituto.
+- **Una nota di migrazione unica per P-11 e P-13**, con l'ordine esplicito (rimuovere
+  **prima** del `git pull`), invece di due note separate: sono lo stesso difetto.
+- **T0.4/T0.5 al gate come verdi con qualificazione dichiarata**, non verdi e basta.
+  *"Non è una regressione"* e *"la nightly è affidabile"* sono affermazioni diverse e
+  solo la prima è dimostrata. Senza la qualificazione, fra un mese avremmo una suite
+  i cui rossi nessuno guarda più.
+- **Finestra GPU non estesa per il soak da 24 h**: l'harness aveva un difetto e una
+  finestra si spende misurando, non debuggando (§2.1). Il T-SOAK-24h si prenota a
+  parte, con harness ormai provato.
+
+**Lezioni che hanno generato una regola**
+- **Le finestre GPU su ENV-W si prenotano, non si occupano** (piano §2.1): la Z8 è
+  noleggiata su vast.ai fuori dalle finestre, ha due stati, e una finestra prenotata
+  va spesa misurando — quindi prova a secco prima, e richiesta all'apertura della fase.
+- **Una misura che conferma l'ipotesi attesa va controllata due volte** (`CLAUDE.md`
+  §5): due casi lo stesso giorno — il 32b letto a `100% CPU` e lo slot di replica letto
+  `false` — entrambi falsi, entrambi in accordo con ciò che ci aspettavamo. Corollario:
+  **un campo derivato deve distinguere "falso" da "non l'ho potuto sapere"**; una
+  costante travestita da misura è peggio di un campo assente.
+- **Le anomalie si scrivono quando si incontrano, non alla chiusura** (`CLAUDE.md` §5):
+  P-11 e P-12 sono arrivati alla supervisione solo perché la sessione bridge si è
+  bloccata e ha dovuto chiedere.
+- **Agganciare sempre `source_url` e `source_revision` alla creazione di una sessione**
+  (`CLAUDE.md` §7.5): due sessioni partite in un container senza repository, ~0,49 $
+  ciascuna e zero lavoro.
+- **Su branch condiviso l'SHA si annota dopo il push**: due entry hanno citato SHA
+  pre-rebase inesistenti.
+
+**Il ritrovamento che vale oltre questa fase**
+**P-11, P-12 e P-13 sono un difetto solo visto da tre lati** — Docker gira come root e
+lascia stato che l'utente non può toccare: un volume, una directory, la stessa
+directory dentro un clone. E nessuno dei tre è stato intercettato dalla CI per **una
+sola** ragione: ogni run parte da zero, quindi la catena di verifica esercita
+sistematicamente l'unico caso che funziona. Non è una lacuna di copertura risolvibile
+con più test: è una **classe di stato che la CI non visita mai**, e che solo una
+macchina con una storia può esercitare. È l'argomento più forte, e su base empirica,
+a favore delle finestre di verifica su hardware reale.
+
+**Aperto a fine fase**
+- **`RUN_NIGHTLY` resta spenta.** Il blocco tecnico (#42) è caduto, ma restano due
+  argomenti: manca il *warm-up gate* (#47) e alle 02:30 nessuno sa se ENV-W è in
+  manutenzione o a noleggio (#44). Decisione dell'owner.
+- **#47** warm-up gate (Fase 3) · **#44** esclusività dell'host (Fase 2, con il flag
+  `--exclusivity` e le condizioni iniziali già scritti su `feature/soak-harness`) ·
+  **#40** T0.10 non robusto (Fase 3) · **P-5** e T-PROF (Fase 2).
+- **T-SOAK-24h non eseguito**: solo un parziale da ~7 h. L'harness è su
+  `feature/soak-harness` e verrà consumato in Fase 4 (v0.0.4).
+- **`preflight.ps1` mai collaudato su Windows/ENV-L.**
+
+**Costo della fase**: sessione A ~6,42 $, sessione B ~11,54 $ (`claude-sonnet-5`
+entrambe), supervisione `claude-opus-5` ~150 $ nozionali; ENV-W non misurabile
+(sessione bridge). Abbonamento MAX: nessun addebito reale.

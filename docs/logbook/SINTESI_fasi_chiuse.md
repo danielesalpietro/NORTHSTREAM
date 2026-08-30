@@ -201,3 +201,122 @@ a favore delle finestre di verifica su hardware reale.
 **Costo della fase**: sessione A ~6,42 $, sessione B ~11,54 $ (`claude-sonnet-5`
 entrambe), supervisione `claude-opus-5` ~150 $ nozionali; ENV-W non misurabile
 (sessione bridge). Abbonamento MAX: nessun addebito reale.
+
+---
+
+## ESITO FASE 2 — chiusa il 2026-08-30 con il tag `v0.0.3` → `442bac1`
+
+**Esito**: fase chiusa. Tag annotato `v0.0.3` → `442bac1`, `develop` allineato col
+merge `f585e38`. Chiuse #21, #22, #24 e #44 (quest'ultima da riverificare, v. sotto);
+**#23 resta aperta** e richiede ENV-L. Obiettivo O4: smettere di mentire sulle risorse.
+
+**Che cosa rilascia v0.0.3**: lo stack dichiara quanto consuma e lo rispetta. Trino
+interroga davvero il Postgres operativo, i profili separano ciò che serve da ciò che
+è scenografia, e ogni servizio ha un tetto di memoria — **misurato, non stimato**,
+dopo che due dei tetti si sono rivelati sotto il footprint reale.
+
+### Numeri misurati
+
+- **T0.7 XFAIL → PASS su hardware vero.** Suite 9 PASS / 3 XFAIL / 1 XPASS, nessuna
+  regressione. Trino conta 15 477 righe su `postgresql.public.orders`, coincidente
+  con `psql` cifra per cifra.
+- **T-PROF**: profilo `core` a **3,0 GiB** contro il criterio di 14 GB — **oltre 4×**
+  di margine. Contro il criterio più stretto (somma dei tetti dichiarati, 5 952 MiB)
+  sta comunque dentro.
+- **P-5 chiuso nel comportamento.** Soak #1 "prima" (427 campioni, 7,39 h) contro
+  soak #2 "dopo" (420 campioni, 26 569 s, finestra comune ≈ entrambi i run interi):
+  RSS totale mediano **15 170 → 7 986 MiB, −47%**.
+- **La risposta di Trino è la pendenza, non il livello.** La crescita relativa è +73%
+  prima e +60% dopo, che da sola non direbbe nulla. Per quarti:
+  **+694/+630/+183/+130 MiB/h senza tetti** — ancora in salita dopo 7,4 ore — contro
+  **+169/+165/+0,5/+0,3** con i tetti. Pendenza sulla seconda metà: **+150,0 → +0,5**.
+- **Gate dei due tetti corretti, verde** (`20260829-1936-envw-d2bd3aa-gate`, 46
+  campioni): `RestartCount` **0→0 su tutti e 19**, `elasticsearch` all'**82,6%** di
+  2048m, `open-webui` piatto a **654,8 MiB ±0,02**, 63,9% di 1024m, `healthy`.
+  Totale sotto tetto 7 202 MiB su 16 704 (43%), `ollama` esente a 604,5 MiB.
+- **I due tetti sbagliati, quantificati**: `open-webui` 512m → **1024m** (footprint
+  reale 679,7 e 687 MiB; **3 474 riavvii** in 7,4 h, 6 151 al teardown);
+  `elasticsearch` 1536m → **2048m** (1 529 MiB = **99,5%** del tetto, `memory.peak`
+  esattamente 1 536,0, **23 riavvii**, 40 al teardown).
+- **VRAM sui 427 campioni del soak #1**: min 362, mediana 362, max 2 671 MiB, media
+  380,7, **5 campioni sopra 1 GiB (1,17%)**, copertura 427/427. **Sei valori distinti
+  in tutta la serie**: la VRAM non è occupata con continuità, il fabbisogno viene
+  dalle generazioni di `/compare`, a raffiche.
+- **#44 rotto dalla seconda GPU**: con un tenant su 22 GiB della 3090, la somma dei
+  device dichiara **18 260 MiB liberi** mentre la scheda singola più libera ne ha
+  **16 184**.
+
+### Decisioni prese, con il perché e le alternative scartate
+
+- **Catalogo `postgresql.properties`, non `postgres.properties`**: il nome del file
+  fissa il nome del catalogo, e T0.7 (scritto prima) punta su
+  `postgresql.public.orders`. La review lo chiama diversamente di sfuggita, ma il
+  contratto vincolante è il test. *Scartato*: rinominare, che avrebbe fatto fallire
+  T0.7 in silenzio.
+- **Heap Trino fisso (`-Xms1G -Xmx2G`)** invece del default `MaxRAMPercentage=80`,
+  che senza `mem_limit` dimensiona l'heap sull'80% della RAM **dell'host** — cioè
+  esattamente il comportamento che P-5 denuncia.
+- **`elasticsearch` a 2048m tenendo `-Xmx1g`.** *Scartato*: abbassare `-Xmx` o
+  `MaxDirectMemorySize`, che avrebbe fatto stare i numeri dentro un tetto scelto male
+  invece di correggere il tetto — e `-Xmx1g` è l'unico valore del compose ancorato a
+  un'impostazione esplicita.
+- **Soak #2 con tutti i profili attivi.** Dopo O4.1 un `compose up` nudo avvia solo
+  `core`: un "dopo" lanciato così avrebbe confrontato 12 container con 19, e la
+  differenza sarebbe stata dominata dai sette mancanti invece che dai tetti. Regola
+  scritta in `piano_ricovero.md` §4.3.2: **un confronto prima/dopo varia una cosa sola**.
+- **T-SOAK-24h aspetta la chiusura di A-3.** Oggi (a) e (c) falliscono per la
+  sovrascrittura del corpus. *Scartato*: farlo subito "per avere il numero", che
+  avrebbe speso 24 ore per rimisurare un guasto noto.
+- **Tabella tier non riscritta nel README.** T-PROF ha misurato `core` a 3,0 GiB e
+  quello è scritto, ma le righe RAM/VRAM per tier sono di #23, che ha bisogno di
+  ENV-L per la domanda sui 16 GB. *Scartato*: riscriverle ora — sarebbe stato tirare
+  a indovinare travestito da release note.
+- **A-3 riclassificata**: non è crescita illimitata, è **distruzione silenziosa di
+  dati**. Prova: il punto `id=3` porta un evento delle 13:41:55Z mentre `id=27413`
+  ne porta ancora uno delle 12:31Z — il contatore è ripartito da zero e risale sopra
+  il corpus esistente.
+
+### Regole che questa fase ha generato
+
+1. **Un test nuovo va falsificato prima di essere creduto** (`CLAUDE.md` §5, terzo
+   caso). T0.7 era stato dichiarato PASS da un'asserzione che **non poteva fallire**:
+   univa stderr a stdout e ricavava il conteggio da `head -1 | tr -dc '0-9'`, cioè
+   dal timestamp di un WARNING. Una query a zero righe veniva valutata OK.
+2. **Un tetto troppo stretto si legge come poco consumo, non come troppo.** Il
+   processo muore prima di crescere: `open-webui` mostrava 138 MiB di mediana, il
+   numero più basso della sua fascia, mentre era il servizio più rotto dei diciannove.
+   Si cerca con `RestartCount`, mai con l'RSS. Terza condizione di §4.3.1(d).
+3. **`OOMKilled` non è attendibile**: `false` per tutto il soak mentre ES restartava
+   23 volte per memoria, perché esce da sé sotto `ExitOnOutOfMemoryError`.
+4. **Un test è verificato contro una configurazione, non per sempre.** #44 è stato
+   scritto, falsificato su tre stati e approvato il 28/08 su una macchina a una GPU;
+   il 29 è arrivata la seconda scheda e il controllo era sbagliato lo stesso giorno.
+5. **Un run lungo deve archiviarsi da solo** — checksum e copia come ultimo passo
+   dello script, non primo passo della sessione successiva.
+
+### Che cosa resta aperto
+
+- **#23** (tier misurati, righe VRAM 16 GB, collaudo `preflight.ps1` su Windows):
+  richiede **ENV-L**, unica cosa che tiene la Fase 2 formalmente incompleta.
+- **#44 da riverificare su due device** dopo la correzione per-device.
+- **`RUN_NIGHTLY` spenta**; #47 (warm-up gate) aperto; #40 (T0.10 non robusto,
+  colto in flagrante: XPASS alle 12:40Z e XFAIL alle 12:47Z sullo stesso stack).
+- **T-SOAK-24h** mai eseguito, in attesa di A-3.
+- `verdict_caps.py`: la lista delle esenzioni dichiarate può divergere dal compose —
+  rischio noto e reso visibile (un servizio senza tetto e non in lista resta UNKNOWN).
+- RP-0 opzionale ma non archiviabile.
+
+### Lezione di processo
+
+La sessione bridge su ENV-W **si è archiviata quattro volte in tre giorni**, una
+volta nove minuti dopo aver ricevuto un compito. Il campionatore distaccato ha
+salvato la misura **tre volte su tre**, ma l'analisi è arrivata con ore o un giorno
+di ritardo, e il passo di archiviazione è stato saltato ogni volta. Da qui il runner
+che si distacca e chiude l'archivio da sé (`bench/gate/`). `tmux`, raccomandato tre
+volte, non è mai stato applicato.
+
+E il ritrovamento più prezioso della fase non viene da una misura: **tre soglie
+scritte a tavolino sono state corrette in due giorni**, tutte perché la sessione che
+le applicava le ha eseguite **alla lettera invece di aggirarle**. Una soglia scritta
+a tavolino non è un fatto, è un'ipotesi, e va falsificata sulla prima misura vera
+esattamente come un test.

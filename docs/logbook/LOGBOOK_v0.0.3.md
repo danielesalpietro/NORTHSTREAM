@@ -899,3 +899,73 @@ un'ipotesi. Va falsificata sulla prima misura vera, esattamente come un test.
   1. Una **finestra ENV-W di circa un'ora** per il gate dei due tetti corretti.
   2. Se avviare la sessione bridge **dentro `tmux`**: si è archiviata tre volte in due
      giorni, e ogni volta l'analisi è slittata di ore pur senza perdere dati.
+
+---
+
+## 2026-08-30 — ENV-W (Z8), sessione bridge: il gate dei due tetti è verde, e i due servizi corretti consumano di più
+
+**RUN_ID**: `20260829-1936-envw-d2bd3aa-gate` · report:
+[`docs/runs/20260829-1936-envw-d2bd3aa-gate.md`](../runs/20260829-1936-envw-d2bd3aa-gate.md) ·
+grezzi in `~/NORTHSTREAM-archive/20260829-1936-envw-d2bd3aa-gate/` con `SHA256SUMS` verificato (12/12).
+
+**Recuperato, non rifatto.** Il gate era stato lanciato il 29/08 alle 19:39Z; la sessione è morta
+alle 19:41Z, due minuti dopo. Il campionatore era distaccato e ha finito da solo: **46 campioni,
+45 minuti, `seq` 0…45 contigui, intervallo 60 s esatto, zero righe malformate**. Terza morte su
+tre in cui i dati sopravvivono. Quei quaranta minuti erano già pagati: sono stati giudicati, non
+rimisurati.
+
+**Verdetto: VERDE su tutte e tre le condizioni di §4.3.1(d).** `RestartCount` **0 → 0 su tutti e
+19** con `OOMKilled` false ovunque · `elasticsearch` max **1 691,5 MiB = 82,6%** di 2048m (soglia
+1 843) · `open-webui` **654,8 MiB piatto** (±0,02 su 46 campioni) = 63,9% di 1024m, `healthy` per
+tutta la finestra, nessun dente di sega. Totale dei servizi con tetto **7 202 MiB mediani su
+16 704 (43%)**, `ollama` esente riportato a parte a 604,5 MiB. Nessun servizio sopra il 90% del
+proprio tetto in **nessun** campione: sequenza consecutiva più lunga **0**, contro 10.
+
+**Il dato che spiega tutto è che il consumo è salito.** ES 1 529 → 1 688 MiB, `open-webui`
+138 → 655. Con i tetti vecchi quei due processi morivano prima di poter occupare quello che
+serviva loro (23 e 3 474 riavvii nel soak #2; 40 e **6 151** al teardown del 29/08), e la loro
+RSS bassa era il sintomo, non la salute. Il picco di `open-webui` in questa finestra è **747 MiB**:
+un terzo abbondante sopra il vecchio tetto di 512m. Prima/dopo sullo stesso controllo è la prova
+che il gate discrimina — il caso rosso non è stato costruito, è stato misurato il 28/08.
+
+**Due difetti in `verdict_caps.py` (`21e9be8`), trovati usandolo.** Le sue medie coincidono con le
+mie riga per riga e l'ho falsificato su tre punti sui dati veri (+1 riavvio → FAIL; un `unhealthy`
+→ UNKNOWN; ES a 1 950 MiB → FAIL). Ma: **(1)** non può mai dire OK su un archivio vero, perché
+l'unica riga residua è l'esenzione di `ollama` e lo script il compose non lo legge — è la
+degenerazione che §4.3.1 ha già corretto il 28/08, rientrata dalla porta del codice; **(2)** accetta
+una serie troncata in silenzio: il mio primo shim ne ha scritti **2 campioni su 46** e lo script ha
+stampato tabella e verdetto senza un segnale, perché `missing` conta solo le righe `ERROR:` e non i
+campioni mai scritti. Sotto i 10 campioni la condizione "≥ 10 consecutivi sopra il 90%" è
+irraggiungibile: una finestra troncata — cioè il modo in cui questa sessione muore da tre giorni —
+dà un verde che non ha guardato niente.
+
+**Difetto mio, corretto in corsa.** I primi due campioni avevano **6 container su 19**:
+`docker inspect --format` con `{{if .State.Health}}` fallisce l'intero template sui container
+senza healthcheck, e i sei superstiti erano esattamente quelli con healthcheck — un risultato
+plausibile e sbagliato. Visto solo perché stampo il conteggio dei container accanto al risultato.
+Corretto con `{{json .}}`; i due campioni sono archiviati a parte e non entrano in nessun conteggio.
+
+**Esclusività: dichiarata non attendibile.** `esclusivita-inizio.json` dice `exclusive`, ma dal
+29/08 ENV-W ha due schede e `gpu_memory_totals()` **somma** i device: il file riporta
+`gpu_total_mib: 24576`, cioè una sola scheda vista alle 19:38Z — non prova che la seconda non ci
+fosse. **#44 va riverificato a tre stati su due device.** Sui tetti non cambia nulla (sono cgroup).
+La finestra comunque **non è stata esclusiva**: un container estraneo effimero nel campione 2 e
+`load1` a **31,1** fra 19:54Z e 20:00Z, durante i quali nessuno dei 19 si è mosso di un MiB.
+
+**VRAM, la risposta che mancava da quattro richieste** (soak #1, 427 campioni, copertura 427/427):
+min **362**, mediana **362**, max **2 671 MiB**, media 380,7; **5 campioni sopra 1 GiB (1,17%)**,
+7 sopra 512 MiB. I valori distinti sono sei in tutto (`362, 625, 627, 1649, 1651, 2671`) e dicono
+più delle statistiche: la VRAM **non è occupata in modo continuo** — 362 MiB è il fondo a modello
+scaricato, i picchi sono gli istanti in cui il modello è residente e durano meno di un campione da
+60 s. Su questo carico una scheda con meno VRAM basterebbe con ampio margine (2,6 GiB di picco su
+24), ma il numero descrive il modello di embedding, non un LLM di generazione tenuto caldo. Dato
+del **device 0 (3090)**: all'epoca dei run la macchina aveva una scheda sola. Da qui in poi ogni
+misura VRAM fissa il device e lo scrive nel manifest.
+
+- **Costo della sessione**: **non misurabile** (sessione bridge).
+- **Prossimo passo**: #24 — CHANGELOG e tag di v0.0.3; il gate che lo bloccava è verde.
+- **Decisioni per l'owner e per chi scrive codice**:
+  1. `verdict_caps.py`: implementare l'esenzione dichiarata e un minimo di campioni sotto il quale
+     il verdetto è UNKNOWN. Senza, non è usabile in nightly.
+  2. **#44 su due device**: riverifica necessaria prima di riaprire `RUN_NIGHTLY`.
+  3. `tmux` per la sessione bridge: quarta morte in tre giorni. Costa dieci secondi.

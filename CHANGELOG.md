@@ -14,6 +14,22 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 numeri misurati (T-PROF, [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23)).)*
 
 ### Added
+- `bench/gate/run_caps_gate.sh` e `bench/gate/verdict_caps.py` — il **gate dei
+  tetti**: conferma a runtime che nessun servizio muore contro, o resta incollato
+  a, il proprio `mem_limit`. Le tre condizioni sono quelle di
+  `docs/piano_ricovero.md` §4.3.1(d), inclusa `RestartCount` invariato.
+  **Il runner si distacca da solo** (`setsid`, PPID 1): su ENV-W la sessione
+  interattiva è morta quattro volte in tre giorni, mentre il campionatore
+  distaccato del soak è sopravvissuto a entrambe le morti che ha visto — la
+  misura non deve dipendere da una sessione viva. **Verdetto separato dal run**,
+  così è rieseguibile sull'archivio quando la regola cambia (è esattamente ciò
+  che ha permesso di rigiudicare il soak #1 contro soglie scritte dopo).
+  Falsificato su tre archivi sintetici prima di essere creduto: rosso coi numeri
+  veri del 28/08 → **FAIL**, verde coi footprint misurati → **OK**, verde con un
+  container `unhealthy` → **UNKNOWN**, mai verde in silenzio (**P-5**,
+  [#21](https://github.com/danielesalpietro/NORTHSTREAM/issues/21),
+  [#24](https://github.com/danielesalpietro/NORTHSTREAM/issues/24)).
+
 - `trino/catalog/postgresql.properties` — catalogo JDBC verso il Postgres
   operativo (`postgres:5432/sales`, utente `demo`). Il nome del file fissa
   il nome del catalogo: **`postgresql`**, non `postgres` come lo cita di

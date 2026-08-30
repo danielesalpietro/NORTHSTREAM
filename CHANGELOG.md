@@ -84,6 +84,22 @@ numeri misurati (T-PROF, [#23](https://github.com/danielesalpietro/NORTHSTREAM/i
   fallirebbe come un OOM-kill silenzioso, non come un errore leggibile.
 
 ### Fixed
+- `bench/lib/gpu_exclusivity.py` e `preflight.sh`: il controllo di capacità VRAM
+  di [#44](https://github.com/danielesalpietro/NORTHSTREAM/issues/44) sommava i
+  device. Su ENV-W, diventata **bi-GPU il 29/08** (3090 24 GB + 5060 Ti 16 GB),
+  con un tenant che occupa 22 GiB della 3090 la somma dichiara **18 260 MiB
+  liberi** mentre la scheda singola più libera ne ha **16 184**: un run che
+  dichiarava `--require-vram-mib 17000` passava il pre-check e moriva al
+  caricamento del modello. **Un modello gira su una scheda, non sulla somma.**
+  Ora `snapshot()` riporta `gpu_devices` per device, `gpu_count` e
+  `gpu_max_free_single_device_mib`, e il pre-check giudica su quest'ultimo.
+  Quando la somma basterebbe ma nessuna singola scheda ci sta, lo dice
+  esplicitamente invece di passare: lo split fra device non è mai stato
+  misurato da questo progetto, quindi non viene trattato come un fit. Lo stato
+  `exclusive`/`shared` non era intaccato — è per-processo, non aggregato.
+  Verificato con un `nvidia-smi` finto su tre scenari (due schede con tenant,
+  due libere, una sola: quest'ultimo identico a prima, nessuna regressione).
+
 - `docker-compose-northstream-ai.yml`: `elasticsearch` passa da `mem_limit: 1536m`
   a **`2048m`**. Il tetto sembrava fondato — "~512m di margine sopra `-Xmx1g`" — ma
   l'aritmetica dimenticava la **direct memory**: la JVM imposta `MaxDirectMemorySize`

@@ -234,13 +234,19 @@ if [[ "$GPU" == "yes" ]]; then
         if [[ -z "$excl_json" ]]; then
             warn "GPU exclusivity (#44): bench/lib/gpu_exclusivity.py produced no output — skipping"
         else
-            read -r excl_state excl_free excl_foreign excl_fcount excl_reason < <(NS_EXCL_JSON="$excl_json" python3 -c '
+            read -r excl_state excl_free excl_fit excl_ndev excl_foreign excl_fcount excl_reason < <(NS_EXCL_JSON="$excl_json" python3 -c '
 import json, os
 d = json.loads(os.environ["NS_EXCL_JSON"])
 free = d["gpu_free_mib"] if d["gpu_free_mib"] is not None else "?"
+# What one model can actually get. A capacity check against the SUM of free
+# memory across devices is a false green: 2 GiB left on a busy 24 GiB card
+# plus an idle 16 GiB card sums to 18, and a 17 GiB model fits neither.
+fit = d.get("gpu_max_free_single_device_mib")
+fit = fit if fit is not None else "?"
+ndev = d.get("gpu_count") if d.get("gpu_count") is not None else "?"
 foreign = d["foreign_used_mib"] if d["foreign_used_mib"] is not None else "?"
 count = d["foreign_process_count"] if d["foreign_process_count"] is not None else "?"
-print(d["state"], free, foreign, count, d["reason"].replace(" ", "_"))
+print(d["state"], free, fit, ndev, foreign, count, d["reason"].replace(" ", "_"))
 ')
             excl_reason="${excl_reason//_/ }"
             case "$excl_state" in
@@ -251,15 +257,23 @@ print(d["state"], free, foreign, count, d["reason"].replace(" ", "_"))
                     ok "GPU exclusivity (#44): exclusive — ${excl_reason}"
                     ;;
                 shared)
-                    if (( REQUIRE_VRAM_MIB > 0 )) && [[ "$excl_free" != "?" ]] && (( excl_free < REQUIRE_VRAM_MIB )); then
+                    # Judged on the largest single device, not the sum: a model
+                    # runs on one card. With ENV-W's two GPUs since 2026-08-29,
+                    # comparing against the sum would pass a run that then dies
+                    # loading the model.
+                    if (( REQUIRE_VRAM_MIB > 0 )) && [[ "$excl_fit" != "?" ]] && (( excl_fit < REQUIRE_VRAM_MIB )); then
+                        split_note=""
+                        if [[ "$excl_free" != "?" ]] && (( excl_free >= REQUIRE_VRAM_MIB )); then
+                            split_note=" The ${excl_ndev} devices sum to ${excl_free} MiB free, which is enough only if the model is split across them — this project has never measured a split run, so it is not treated as a fit."
+                        fi
                         if [[ "$ALLOW_CONTENTION" == "yes" ]]; then
-                            warn "GPU exclusivity (#44): shared — ${excl_free} MiB free, ${excl_foreign} MiB held by ${excl_fcount} foreign process(es); this run declared it needs ${REQUIRE_VRAM_MIB} MiB. Starting anyway (--allow-contention)."
+                            warn "GPU exclusivity (#44): shared — largest single device has ${excl_fit} MiB free across ${excl_ndev} GPU(s), ${excl_foreign} MiB held by ${excl_fcount} foreign process(es); this run declared it needs ${REQUIRE_VRAM_MIB} MiB.${split_note} Starting anyway (--allow-contention)."
                         else
-                            err "GPU exclusivity (#44): ${excl_foreign} MiB of ${excl_fcount} foreign process(es) occupy the GPU, leaving ${excl_free} MiB free — this run declared it needs ${REQUIRE_VRAM_MIB} MiB (--require-vram-mib) and will not fit. Wait for the tenant to release the GPU, lower the model/tier, or pass --allow-contention to force a run that does not need the memory it asked for."
+                            err "GPU exclusivity (#44): ${excl_foreign} MiB of ${excl_fcount} foreign process(es) occupy the GPU(s); the largest single device has ${excl_fit} MiB free and this run declared it needs ${REQUIRE_VRAM_MIB} MiB (--require-vram-mib), so it will not fit on any one card.${split_note} Wait for the tenant to release the GPU, lower the model/tier, or pass --allow-contention to force a run that does not need the memory it asked for."
                         fi
                     else
                         note="no --require-vram-mib declared, reporting only"
-                        (( REQUIRE_VRAM_MIB > 0 )) && note="free VRAM (${excl_free} MiB) still covers the ${REQUIRE_VRAM_MIB} MiB this run declared"
+                        (( REQUIRE_VRAM_MIB > 0 )) && note="largest single device (${excl_fit} MiB free of ${excl_free} MiB across ${excl_ndev} GPU(s)) covers the ${REQUIRE_VRAM_MIB} MiB this run declared"
                         warn "GPU exclusivity (#44): shared — ${excl_reason} (${note})"
                     fi
                     ;;

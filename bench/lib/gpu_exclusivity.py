@@ -69,24 +69,43 @@ def run(cmd, timeout=TIMEOUT):
 
 
 def gpu_memory_totals():
-    out, err = run(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"])
+    """Per-device readings, plus the sums.
+
+    Returns (devices, used, total, error) where devices is a list of
+    {index, name, used_mib, total_mib, free_mib}.
+
+    The per-device list is not decoration. ENV-W went from one GPU to two on
+    2026-08-29, and a model does not run on the SUM of the free memory: with a
+    tenant holding 22 GiB of a 24 GiB card and a second 16 GiB card idle, the
+    sum says 18 GiB free while no single device can hold a 19 GiB model. A
+    capacity check against the sum is a false green, so callers deciding
+    whether a run fits must use max(free_mib) over the devices, not the sum.
+    The sums stay because "how loaded is this host" is a different, still
+    useful question from "will my model fit".
+    """
+    out, err = run(["nvidia-smi",
+                    "--query-gpu=index,name,memory.used,memory.total",
+                    "--format=csv,noheader,nounits"])
     if err:
-        return None, None, err
-    used = total = 0
-    saw_a_line = False
+        return None, None, None, err
+    devices = []
     for line in out.splitlines():
         line = line.strip()
         if not line:
             continue
         parts = [p.strip() for p in line.split(",")]
-        if len(parts) != 2 or not all(p.isdigit() for p in parts):
-            return None, None, f"unparsed nvidia-smi line: {line!r}"
-        used += int(parts[0])
-        total += int(parts[1])
-        saw_a_line = True
-    if not saw_a_line:
-        return None, None, "nvidia-smi returned no GPU lines"
-    return used, total, None
+        if len(parts) != 4 or not (parts[0].isdigit() and parts[2].isdigit() and parts[3].isdigit()):
+            return None, None, None, f"unparsed nvidia-smi line: {line!r}"
+        used_mib, total_mib = int(parts[2]), int(parts[3])
+        devices.append({"index": int(parts[0]), "name": parts[1],
+                        "used_mib": used_mib, "total_mib": total_mib,
+                        "free_mib": total_mib - used_mib})
+    if not devices:
+        return None, None, None, "nvidia-smi returned no GPU lines"
+    return (devices,
+            sum(d["used_mib"] for d in devices),
+            sum(d["total_mib"] for d in devices),
+            None)
 
 
 def gpu_compute_processes():
@@ -129,18 +148,26 @@ def snapshot(project_label):
         "gpu_used_mib": None,
         "gpu_total_mib": None,
         "gpu_free_mib": None,
+        "gpu_devices": None,
+        "gpu_count": None,
+        "gpu_max_free_single_device_mib": None,
         "foreign_used_mib": None,
         "foreign_process_count": None,
         "docker_attribution": None,
         "errors": [],
     }
 
-    used, total, err = gpu_memory_totals()
+    devices, used, total, err = gpu_memory_totals()
     if err:
         result["reason"] = f"nvidia-smi unavailable ({err}) — not applicable on this host, not evidence of contention"
         return result
     result["gpu_used_mib"], result["gpu_total_mib"] = used, total
     result["gpu_free_mib"] = total - used
+    result["gpu_devices"] = devices
+    result["gpu_count"] = len(devices)
+    # What a single model can actually get. Compare capacity requirements
+    # against this, never against gpu_free_mib -- see gpu_memory_totals().
+    result["gpu_max_free_single_device_mib"] = max(d["free_mib"] for d in devices)
 
     procs, err = gpu_compute_processes()
     if err:

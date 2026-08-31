@@ -22,6 +22,23 @@ numeri misurati: rimandati a [#23](https://github.com/danielesalpietro/NORTHSTRE
 che richiede ENV-L per le righe VRAM a 16 GB.*
 
 ### Added
+- **T0.13 — provenienza dei tetti di memoria** (`bench/t0/lib/ceilings.py` +
+  `bench/t0/tests/t0.13_ceilings_measured.sh`): ogni `mem_limit` deve citare la
+  misura da cui viene, e ogni servizio senza tetto deve dichiarare in un commento
+  che è deliberato. **Dichiarato XFAIL**: oggi 15 tetti su 17 sono ragionati e non
+  misurati, ed è così che v0.0.3 — la release sull'onestà delle risorse — ne ha
+  spediti due sotto il footprint reale. Flippa quando [#23](https://github.com/danielesalpietro/NORTHSTREAM/issues/23)
+  misura i tier. Il linter non può sapere se un numero è giusto; verifica che
+  **dica da dove viene**, che è la proprietà che avrebbe intercettato entrambi.
+- `bench/gate/test_verdict_caps.py` — le sei falsificazioni di `verdict_caps.py`
+  messe a repository invece che eseguite una volta sola: rosso, verde, esente,
+  serie troncata, container `unhealthy`, container di un altro progetto. Ognuna
+  corrisponde a un difetto realmente spedito.
+- `bench/env-w/start-session.sh` — avvia la sessione operativa su ENV-W dentro
+  `tmux` e dalla cartella del repo. La sessione si è archiviata **quattro volte in
+  tre giorni**; `tmux` era raccomandato nel logbook da tre giorni e applicato zero,
+  perché una raccomandazione va ricordata e un comando si esegue.
+
 - `bench/gate/run_caps_gate.sh` e `bench/gate/verdict_caps.py` — il **gate dei
   tetti**: conferma a runtime che nessun servizio muore contro, o resta incollato
   a, il proprio `mem_limit`. Le tre condizioni sono quelle di

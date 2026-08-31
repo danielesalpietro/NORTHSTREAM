@@ -21,6 +21,7 @@ import json
 import os
 import threading
 import time
+import uuid
 from collections import deque
 from datetime import datetime, timezone
 
@@ -45,8 +46,13 @@ app = FastAPI(title="NORTHSTREAM Stream Context Agent")
 recent_events = deque(maxlen=MAX_BUFFER)
 qdrant = QdrantClient(url=QDRANT_URL)
 _collection_ready = False
-_point_id_lock = threading.Lock()
-_point_id = 0
+
+# Namespace for deterministic point ids (finding A-3). Fixed constant, never
+# regenerated: it is derived once as
+#   uuid5(NAMESPACE_URL, "https://github.com/danielesalpietro/NORTHSTREAM/stream_events")
+# and hardcoded so that the same event always maps to the same id, in this
+# process and in every future one.
+POINT_ID_NAMESPACE = uuid.UUID("ee4a4e8d-3dcb-5172-9f02-613e166fdef3")
 
 
 def ensure_collection(vector_size: int):
@@ -84,11 +90,26 @@ def event_to_text(topic: str, payload: dict) -> str:
     return f"[{topic}] {op} ts={ts} data={json.dumps(data, default=str)}"
 
 
-def next_point_id() -> int:
-    global _point_id
-    with _point_id_lock:
-        _point_id += 1
-        return _point_id
+def point_id(topic: str, partition: int, offset: int) -> str:
+    """Deterministic id for one Kafka record, from (topic, partition, offset).
+
+    The previous id was an in-RAM counter restarting at zero on every container
+    start, against a PERSISTENT Qdrant volume: the second run overwrote the
+    points of the first (finding A-3, observed in production on 2026-08-28 --
+    id=3 carried a 13:41:55Z event while id=27413 still carried a 12:31Z one).
+
+    (topic, partition, offset) identifies a Kafka record uniquely and forever,
+    so the same record always maps to the same id: re-reading it upserts over
+    itself instead of over someone else, which makes a replay idempotent rather
+    than destructive.
+
+    NOT hash(): Python salts it per process (PYTHONHASHSEED is random since 3.3),
+    so it would reintroduce exactly this bug wearing a better disguise. NOT
+    uuid4(): random, so no idempotence. uuid5 is a SHA-1 over namespace + name --
+    stable across processes, machines and Python versions, and accepted by Qdrant,
+    which takes only an unsigned integer or a UUID as a point id.
+    """
+    return str(uuid.uuid5(POINT_ID_NAMESPACE, f"{topic}:{partition}:{offset}"))
 
 
 def consume_loop():
@@ -131,7 +152,7 @@ def consume_loop():
                         collection_name=COLLECTION,
                         points=[
                             qmodels.PointStruct(
-                                id=next_point_id(),
+                                id=point_id(msg.topic, msg.partition, msg.offset),
                                 vector=vector,
                                 payload={"text": text, "topic": msg.topic},
                             )

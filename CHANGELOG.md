@@ -10,9 +10,24 @@ sezione prende versione e data, e ogni riga deve avere il suo test di riscontro.
 
 ## [Unreleased]
 
-*(Fase 3 — v0.0.4, agent robusto. In coda: point-id deterministici (A-3),
-timestamp nel payload e filtro recency (A-2), rimozione del boost keyword su
-`KNOWN_SITES` (A-1), `/health` reale (A-5).)*
+*(Fase 3 — v0.0.4, agent robusto. In coda: timestamp nel payload e filtro
+recency (A-2), rimozione del boost keyword su `KNOWN_SITES` (A-1), `/health`
+reale (A-5).)*
+
+### Fixed
+- **Point-id deterministici da `(topic, partition, offset)` (A-3, O5.1).** L'id
+  di un punto Qdrant era un contatore in RAM che ripartiva da zero a ogni avvio
+  del container, contro un volume persistente: l'agent **sovrascriveva il corpus
+  esistente** invece di aggiungersi, e lo faceva con la faccia più rassicurante
+  possibile — un conteggio dei punti piatto. Ora l'id è
+  `uuid5(NAMESPACE, "topic:partition:offset")`, deterministico fra processi, che
+  rende un replay idempotente invece che distruttivo. Non `hash()`, che Python
+  sala per processo e che avrebbe riprodotto lo stesso difetto travestito meglio;
+  non `uuid4()`, che perde l'idempotenza. I punti già indicizzati con id interi
+  restano dove sono: la corruzione storica è congelata, non cresce più. T0.8
+  flippa XFAIL → PASS e la sua asserzione ora copre il contratto che il commento
+  già prometteva — il payload di un id noto dopo un riavvio, non il solo
+  conteggio, che non discrimina.
 
 ## [v0.0.3] — 2026-08-30
 

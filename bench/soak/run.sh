@@ -8,12 +8,22 @@
 # a degraded subsystem, and is safe to run under nohup/tmux for 24h+: a kill at
 # any point leaves every prior sample readable.
 #
+# With --detach it does not merely tolerate outliving its session, it arranges
+# to: setsid, PPID 1, prompt back immediately. On ENV-W the operating session
+# died four times in three days, and the detached sampler kept the measurement
+# every single time -- while the archiving step, which was the session's job,
+# was skipped every single time. So the run closes its own archive too: on exit
+# it writes SHA256SUMS over its outputs, which is what turns a directory of
+# files into a run someone can trust three weeks later. Over 24 hours the
+# window in which that matters is 24 hours long.
+#
 # Usage:
 #   bench/soak/run.sh [--interval SECONDS] [--duration SECONDS] \
 #                      [--report DIR] [--env TAG] [--repo PATH] \
 #                      [--exclusivity exclusive|shared|unknown]
 #
 # Options:
+#   --detach            re-exec under setsid and return immediately (see below)
 #   --interval SECONDS  seconds between samples (default: 60)
 #   --duration SECONDS  stop after this many seconds (default: 0 = run until
 #                        killed — SIGINT/SIGTERM stop cleanly after the
@@ -48,6 +58,8 @@ HARNESS_REPO="$(cd "$HARNESS_DIR/../.." && pwd)"
 
 INTERVAL=60
 DURATION=0
+DETACH="no"
+ORIGINAL_ARGS=("$@")
 REPORT_DIR=""
 ENV_TAG="${NS_ENV:-envx}"
 REPO="${NS_REPO:-$HARNESS_REPO}"
@@ -57,6 +69,7 @@ while (($#)); do
     case "$1" in
         --interval)    INTERVAL="$2"; shift 2 ;;
         --duration)    DURATION="$2"; shift 2 ;;
+        --detach)      DETACH="yes"; shift ;;
         --report)      REPORT_DIR="$2"; shift 2 ;;
         --env)         ENV_TAG="$2"; shift 2 ;;
         --repo)        REPO="$(cd "$2" && pwd)"; shift 2 ;;
@@ -81,6 +94,23 @@ mkdir -p "$REPORT_DIR"
 SAMPLES_FILE="$REPORT_DIR/samples.jsonl"
 ERR_LOG="$REPORT_DIR/soak.err.log"
 touch "$SAMPLES_FILE" "$ERR_LOG"
+
+# Detach here, once the run identity exists and before any initialisation: the
+# child inherits RUN_ID (honoured at the top of this block) so it lands in the
+# same directory, and the collection snapshot is taken once, by the process
+# that will actually do the sampling.
+if [[ "$DETACH" == "yes" && "${NS_SOAK_CHILD:-}" != "1" ]]; then
+    export NS_SOAK_CHILD=1 RUN_ID
+    setsid nohup "$0" "${ORIGINAL_ARGS[@]}" \
+        >"$REPORT_DIR/soak.out.log" 2>>"$ERR_LOG" </dev/null &
+    disown 2>/dev/null || true
+    echo "RUN_ID:   $RUN_ID"
+    echo "report:   $REPORT_DIR"
+    echo "detached under PPID 1 — this shell can be closed, the run continues."
+    echo "follow:   tail -f $REPORT_DIR/soak.out.log"
+    echo "stop:     pkill -f 'soak/run.sh.*$RUN_ID'"
+    exit 0
+fi
 
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 started_epoch="$(date +%s)"
@@ -141,6 +171,19 @@ while [[ "$stop" -eq 0 ]]; do
 done
 
 finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# Close the archive here, not in whoever comes back. Soak #1 sat unarchived for
+# fifteen hours because the session that was meant to collect it had died; the
+# data survived by luck of the volume, not by design.
+if command -v sha256sum >/dev/null 2>&1; then
+    ( cd "$REPORT_DIR" && sha256sum ./* >SHA256SUMS.tmp 2>/dev/null \
+        && mv SHA256SUMS.tmp SHA256SUMS ) \
+        && echo "archive closed: $REPORT_DIR/SHA256SUMS ($(wc -l <"$REPORT_DIR/SHA256SUMS") files)" \
+        || echo "WARNING: could not write SHA256SUMS — archive is NOT closed" >&2
+else
+    echo "WARNING: sha256sum unavailable, archive left unchecksummed" >&2
+fi
+
 echo
 echo "stopped after $seq sample(s) — started $started_at, finished $finished_at"
 echo "verdict: python3 $HARNESS_DIR/verdict.py --samples \"$SAMPLES_FILE\" --manifest \"$REPORT_DIR/manifest.json\""

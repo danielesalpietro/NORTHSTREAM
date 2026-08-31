@@ -46,6 +46,17 @@ numeri misurati: rimandati a [#23](https://github.com/danielesalpietro/NORTHSTRE
 che richiede ENV-L per le righe VRAM a 16 GB.*
 
 ### Added
+- `bench/soak/` portato su `release/v0.0.4` dal branch `feature/soak-harness`, che
+  era **62 commit indietro**: lanciare T-SOAK-24h da lì avrebbe misurato uno stack
+  senza il fix di A-3, coi tetti vecchi e senza il catalogo Trino — il sistema
+  sbagliato, per ventiquattro ore.
+- `bench/soak/run.sh --detach` — il run si **stacca da sé** (`setsid`, PPID 1) e a
+  fine corsa **chiude il proprio archivio** scrivendo `SHA256SUMS`. Le due lezioni
+  del soak #1, finalmente applicate al codice invece che raccomandate: il
+  campionatore distaccato ha salvato la misura tre volte su tre mentre la sessione
+  moriva, e il passo di archiviazione — compito della sessione — è stato saltato
+  tutte e tre. Su 24 ore quella finestra di esposizione dura 24 ore.
+
 - **T0.13 — provenienza dei tetti di memoria** (`bench/t0/lib/ceilings.py` +
   `bench/t0/tests/t0.13_ceilings_measured.sh`): ogni `mem_limit` deve citare la
   misura da cui viene, e ogni servizio senza tetto deve dichiarare in un commento

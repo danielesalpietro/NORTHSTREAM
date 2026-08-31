@@ -1,7 +1,7 @@
 {
-  "target": "v0.0.2",
+  "target": "v0.0.3",
   "source": "docs/piano_ricovero.md section 6 (release train)",
-  "description": "Expected outcome of every T0 test on the current release branch. It differs from the previous release only where a release declares a progression test: v0.0.1 flipped T0.12 (README truth); v0.0.2 flips T0.6 (dual Kafka listener, P-1) and adds T-REPRO (every pulled image pinned to version+digest, P-3/P-4) as a new, already-passing gate.",
+  "description": "Expected outcome of every T0 test on the current release branch. It differs from the previous release only where a release declares a progression test: v0.0.1 flipped T0.12 (README truth); v0.0.2 flipped T0.6 (dual Kafka listener, P-1) and added T-REPRO (every pulled image pinned to version+digest, P-3/P-4) as a new, already-passing gate; v0.0.3 flipped T0.7 (Trino queries the operational Postgres, P-2), measured on ENV-W and falsified in three cases before being believed.",
   "expected": {
     "T0.1": "PASS",
     "T0.2": "PASS",

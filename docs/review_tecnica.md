@@ -137,6 +137,15 @@ Il payload dei punti Qdrant è `{"text", "topic"}`: nessun timestamp filtrabile.
 > e A-3 sale di priorità dentro v0.0.4 — non è igiene dello storage, è integrità del
 > corpus su cui il RAG risponde.
 
+> **Scissione del 31/08.** Questo paragrafo teneva insieme due difetti diversi: gli id
+> non deterministici e la **crescita del corpus senza TTL né cleanup**, quest'ultima
+> citata come nota di contorno («contestualmente: …»). Con la chiusura di A-3 (id da
+> `uuid5(topic:partition:offset)`) la seconda metà è rimasta **orfana**: la retention
+> non esiste, non ha un progression test, e non ha una release che la ospiti. Va
+> trattata come finding a sé — finché manca, il check (a) del soak resta WARN per
+> costruzione (`docs/piano_ricovero.md` §4.3.1). Un difetto nascosto dentro il
+> paragrafo di un altro sopravvive alla chiusura di quello, e nessuno se ne accorge.
+
 **A-4 [MAJOR] — Embedding sincrono nel hot path del consumer, in contesa con la generazione.**
 Ogni evento = una chiamata HTTP bloccante a Ollama (timeout 30 s) dentro il loop del consumer. Ollama serve *anche* le generazioni di `/compare` (fino a 120 s) sulla stessa istanza: durante una risposta il thread consumer si accoda o va in timeout, e l'evento viene **perso per sempre** con un `print` ("embedding/upsert failed") — niente retry, niente coda, e con `auto_offset_reset="latest"` senza `group_id` niente possibilità di recupero. Al ritmo attuale (un evento ogni ~3 s) il difetto è latente; alzare `INTERVAL_SECONDS` o fare più domande in parallelo durante un workshop lo rende visibile. Un buffer interno con embedding batch fuori dal loop di consumo sarebbe coerente con la taglia del progetto.
 

@@ -325,12 +325,27 @@ se non entra niente e l'opposto se entrano mille eventi l'ora.
 | Retention **configurata**: conteggio entro il target dichiarato e pendenza ≈ 0 sulla seconda metà del run | OK |
 | Conteggio piatto o calante **mentre** gli eventi nel DB crescono | **FAIL** — sovrascrittura o perdita di dati, il caso più grave, non il più tranquillo |
 | Retention configurata ma conteggio in crescita non limitata | FAIL |
-| **Nessuna retention configurata** (stato di oggi, A-3) | **WARN — atteso, mai OK** |
+| **Nessuna retention configurata** (stato di oggi) | **WARN — atteso, mai OK** |
 
-L'ultima riga è deliberata: finché A-3 non è chiuso non esiste una retention, quindi
-non esiste una condizione che (a) possa legittimamente dichiarare OK. Un check che non
-può dare verde finché il difetto è aperto è un check onesto; uno che dà verde perché la
-serie è piatta è una decorazione.
+L'ultima riga è deliberata: senza una retention non esiste una condizione che (a) possa
+legittimamente dichiarare OK. Un check che non può dare verde finché la capacità manca
+è un check onesto; uno che dà verde perché la serie è piatta è una decorazione.
+
+**Correzione del 31/08, e vale la pena dire come è emersa.** Questa riga diceva prima
+«finché **A-3** non è chiuso non esiste una retention», legando le due cose come se
+chiudere A-3 ne producesse una. **A-3 è chiuso da oggi e la retention continua a non
+esistere**: l'unico `maxlen` in `stream-agent/app.py` è il buffer in RAM
+(`recent_events`), e sulla collection Qdrant non c'è né TTL né cleanup. La conclusione
+reggeva, la motivazione no — e una motivazione sbagliata è peggio di una assente,
+perché chi legge «A-3 chiuso» ne dedurrebbe che (a) può ora dare OK.
+
+La causa è che la review aveva infilato la retention *dentro* il paragrafo di A-3
+(«contestualmente: crescita senza TTL né cleanup»), come nota di contorno a un finding
+sugli id. Chiudendo A-3 quella metà è rimasta orfana. **Sono due difetti**, non uno:
+l'id deterministico e la retention del corpus. Il secondo non ha ancora un progression
+test né una release che lo ospiti, e finché non ce l'ha, (a) resta WARN per
+costruzione. Trovata dalla sessione T-SOAK-24h, che ha letto la motivazione invece di
+fidarsi della conclusione.
 
 **(d) RSS totale.** Il tetto non è una costante: è **la somma dei `mem_limit`
 dichiarati nel compose** per i servizi del profilo in esame. Scritto così si

@@ -1073,3 +1073,376 @@ nudo, come già fa l'healthcheck.
      per T-SOAK-24h, se e quando riprenderla; formulazione permanente del gate su
      T0.4/T0.5 "a stack caldo" per le release future) — non di competenza di questa
      sessione né bloccanti per il tag di v0.0.2.
+
+---
+
+> **Recuperate dal branch `feature/soak-harness` il 2026-08-31**, quando l'harness
+> del soak è stato portato su `release/v0.0.4`. Erano state scritte su quel branch
+> mentre la Fase 1 si chiudeva altrove, quindi non sono entrate nella compressione
+> di fase: la numerazione delle entry diverge da quella qui sopra per la stessa
+> ragione. Sono append-only come tutte le altre, e sono qui perché il logbook non
+> si riscrive e non si perde.
+
+## 2026-08-27 (quarta entry) — sessione remota (cloud, nessun ambiente di
+esecuzione) — Sessione A, fuori scope Fase 1
+
+- **Nota di collocazione**: questa entry documenta lavoro **non di Fase 1**, per la
+  regola `CLAUDE.md` §3.2 ("annotare nel logbook della fase che ospita il lavoro
+  anticipato, citando la fase che lo consumerà"). #41 e #42 (lo scope reale di
+  questa sessione in Fase 1) sono chiusi — v. terza entry sopra. Questo lavoro è
+  arrivato via un nuovo compito della supervisione durante una finestra di
+  manutenzione ENV-W dichiarata dall'owner, ed è **infrastruttura di test per
+  v0.0.4** (T-SOAK-24h), non una modifica al sistema: ammessa in anticipo dalla
+  stessa regola §3.2 (a). Branch **`feature/soak-harness`**, aperto da `develop`
+  @ `7ae7181` — **non** `release/v0.0.2` — perché non è scope della release
+  corrente.
+- **Obiettivo della sessione**: costruire `bench/soak/`, l'harness di
+  campionamento di **T-SOAK-24h** (`docs/piano_ricovero.md` §4.3), così la
+  finestra di manutenzione ENV-W (12+ ore, prenotata dall'owner) possa misurare
+  invece di aspettare che il codice sia pronto.
+- **Fatto** (commit `e22f88b` su `feature/soak-harness`):
+  - `bench/soak/lib/sample.py` — un campione per invocazione: `points_count` di
+    Qdrant, `pg_replication_slots` + conteggio righe (`sensor_readings`,
+    `orders`) via `docker exec psql`, RSS per container `northstream-*` via
+    `docker stats --no-stream`, più load average/RAM libera/VRAM per issue
+    **#44**. Ogni sottosistema è isolato in un proprio try/except: un
+    fallimento produce un campo `error` e un valore nullo, mai un crash.
+  - `bench/soak/run.sh` — orchestratore: loop a intervallo fisso (default 60 s),
+    scrittura append-only una riga per campione, `trap` su `SIGINT`/`SIGTERM`
+    per fermarsi in modo pulito dopo il campione in corso. Riusa le convenzioni
+    `RUN_ID`/`manifest.json` già stabilite da `bench/t0/run.sh` invece di
+    inventarne di nuove.
+  - `bench/soak/verdict.py` — script separato che trasforma `samples.jsonl` in
+    un verdetto sulle quattro verifiche del piano, più un riepilogo descrittivo
+    di esclusività host per #44.
+  - `bench/soak/README.md` — uso e schema dei campioni.
+- **Decisioni prese** (e perché — alternative scartate):
+  - **Due delle quattro verifiche (crescita Qdrant vs retention, RSS vs tier)
+    restano `UNKNOWN` finché non si passa esplicitamente una soglia** via
+    `--max-replication-mib` / `--rss-ceiling-mib`, invece di un default
+    inventato. *Motivo*: la retention non è implementata, e l'unico tetto RSS
+    dichiarato nel piano (T-PROF, v0.0.3) vale per il profilo `core`, non per lo
+    stack pieno che un soak esercita. Un numero senza base nel piano
+    sembrerebbe un gate reale e non lo è — meglio dichiararlo esplicitamente
+    sconosciuto che fabbricare falsa fiducia. *Alternativa scartata*: un
+    default "ragionevole" hardcoded — scartata perché indistinguibile, nel
+    report, da una soglia realmente decisa.
+  - **Le altre due verifiche (dimensione replication slot con soglia esplicita,
+    eventi persi DB-vs-Qdrant) restano invece verdetti reali**, calcolate dal
+    delta fra primo e ultimo campione valido: non richiedono una soglia esterna
+    per essere significative.
+  - **`host_exclusivity` in `verdict.py` è solo descrittivo**, non implementa il
+    pre-check/classificatore di #44 (min/max VRAM, RAM, load per campione, zero
+    logica di gate). *Motivo*: #44 è issue propria di Fase 2 (v0.0.3) con una
+    definition of done più ampia (pre-check che blocca un run, marcatura
+    "contaminato" a metà run, campo `exclusive/shared/unknown` nel manifest);
+    implementarla qui sarebbe uscire dallo scope assegnato di questa sessione
+    (il campionamento) invadendo quello di un'altra issue. Il compito
+    assegnato chiedeva esplicitamente solo "VRAM, RAM libera e load a ogni
+    campione" — fatto — non la classificazione.
+  - **Ogni riga è un singolo `write()` con `flush()`+`fsync()`**, non un buffer
+    che si scrive a intervalli o a fine run: è il modo con cui un campione
+    resta leggibile anche se il processo muore a metà (requisito esplicito del
+    compito — "se il run muore alla ventitreesima ora, le prime 22 devono
+    restare leggibili").
+  - **Nessuna riga di CHANGELOG.md per questo commit.** `CLAUDE.md` §4 esenta i
+    commit solo-documentazione, ma questo è codice — la ragione è un'altra:
+    l'`[Unreleased]` di `CHANGELOG.md` è scope di `release/v0.0.2`
+    (`Fase 1`), e questo branch non è quella release. L'aggiunta di
+    `bench/soak/` avrà la sua riga quando **v0.0.4** la userà davvero, non ora
+    — altrimenti il changelog di una release racconterebbe lavoro di un'altra,
+    esattamente il difetto D-1 da cui è nata la review.
+- **Test eseguiti** (nessun ambiente Docker in questa sessione — v. `CLAUDE.md`
+  §5, "si limita a lavoro statico"):
+  - `bash -n bench/soak/run.sh` → sintassi valida. `python3 -m py_compile` su
+    `sample.py` e `verdict.py` → sintassi valida. `ruff check bench/soak/` →
+    pulito dopo la correzione di due `E731` (lambda → `def`).
+  - **Prova a secco richiesta dal compito** (10 min a intervallo ridotto, poi
+    ripetuta a 6 s dopo il fix ruff): `bench/soak/run.sh --interval 2|3
+    --duration 6|10` senza demone Docker in questa sandbox → 3 campioni
+    prodotti, ognuno con i sottosistemi Docker/Qdrant degradati a `error`
+    esplicito (nessun crash), `host` comunque popolato (load, RAM; niente GPU,
+    coerente — sandbox senza `nvidia-smi`). `verdict.py` sui campioni →
+    `UNKNOWN` sulle quattro verifiche (nessun dato Docker) più il riepilogo
+    host, exit 0. **Test del segnale**: `SIGTERM` a metà run (dopo 3 campioni)
+    → uscita pulita, `samples.jsonl` con 3 righe, tutte JSON valido. Verifica
+    superata nei limiti di questa sandbox: **la prova a secco vera, con lo
+    stack acceso, resta da fare sulla Z8** — è quanto il compito stesso
+    prevedeva ("non hai Docker in questa sessione... la prova a secco vera la
+    farà la Z8").
+  - Non-regressione: nessun file fuori da `bench/soak/` toccato.
+- **Costo della sessione**: `claude-sonnet-5` (configurato e servito, nessun
+  fallback). Da `get_session` alla chiusura di questo compito: **7.351.495
+  token di cache read**, **235.465 di cache write**, **33.019 di output**,
+  **2,74 $** nozionali (abbonamento MAX). Durata di sessione dalla creazione:
+  ~1 h 37 min (08:39Z–10:16Z) — include anche il lavoro su #41/#42 di questa
+  stessa sessione, non scorporabile a posteriori (v. `CLAUDE.md` §7 sulla
+  lunghezza di sessione come driver di costo dominante).
+- **Non funziona / sospeso**: la prova a secco reale su ENV-W (stack acceso)
+  non è stata eseguita da questa sessione — nessun accesso a ENV-W. Consegnata
+  alla sessione ENV-W come riportato sotto.
+- **Prossimo passo per la sessione successiva**: sulla Z8, dentro `tmux`,
+  checkout di `feature/soak-harness` e:
+  ```sh
+  tmux new -s northstream-soak
+  git fetch origin feature/soak-harness && git checkout feature/soak-harness
+  bench/soak/run.sh --interval 30 --duration 600 --env envw   # prova a secco, 10 min
+  python3 bench/soak/verdict.py --samples results/<RUN_ID>/samples.jsonl \
+      --manifest results/<RUN_ID>/manifest.json --report results/<RUN_ID>
+  ```
+  Se la prova a secco è verde (campioni leggibili, verdetto calcolato, nessun
+  crash), la finestra di manutenzione prenotata parte con
+  `bench/soak/run.sh --interval 60 --duration 86400 --env envw` sotto `tmux`.
+  Consigliato: lanciare **T-SOAK-24h insieme** allo stack pieno (`--gpu`) così
+  la finestra dà anche la prima misura "prima" citata in piano §6-bis.
+- **Decisioni richieste all'owner**: nessuna — il branch e lo scope erano già
+  decisi dalla supervisione nel compito assegnato.
+
+---
+## 2026-08-27 (quinta entry) — sessione remota (cloud) — Sessione A, fix urgente
+soak, fuori scope Fase 1 (stessa collocazione della quarta entry)
+
+- **Obiettivo**: correggere un difetto misurato dalla supervisione su ENV-W —
+  `bench/soak/lib/sample.py` leggeva `active` dello slot di replica sempre
+  `false`, perché il confronto era contro `'t'` mentre Postgres, concatenando
+  un booleano con `||`, lo stringifica `'true'`/`'false'`. Una costante
+  travestita da misura: 24 h archiviate avrebbero raccontato una pipeline
+  scollegata, falso.
+- **Fatto** (commit `2b4f4ad` su `feature/soak-harness`):
+  - **Fix alla radice**: la query ora forza l'encoding con un `CASE WHEN
+    active THEN 't' WHEN NOT active THEN 'f' ELSE 'u' END`, invece di
+    fidarsi di come Postgres stringifica implicitamente un booleano
+    concatenato (dipendente da versione/contesto, non garantito).
+  - **Difesa in profondità**: il parser accetta solo `'t'`/`'f'`; qualunque
+    altro valore diventa `active: None` con un warning esplicito — non può
+    più collassare silenziosamente su `False`.
+  - **Riletti gli altri campi derivati** (richiesto esplicitamente dal
+    compito): righe non riconosciute della query postgres, righe non
+    parsabili di `docker stats`, container visti da `docker ps` ma assenti
+    da `docker stats`, righe `nvidia-smi` non parsabili — tutti ora
+    producono un warning/error invece di sparire in silenzio. Gli altri campi
+    derivati (`retained_bytes`, i conteggi tabella) erano già corretti:
+    usano già `.isdigit()` con fallback a `None`, non a `0`.
+  - **Auto-verifica minima**: ogni warning/error di ogni sottosistema è ora
+    anche stampato su stderr per ogni campione (non solo il primo — più
+    semplice e strettamente più sicuro), che `run.sh` già redirige in
+    `soak.err.log`: un dato anomalo è visibile entro un intervallo, non dopo
+    24 ore.
+- **Decisioni prese**: nessuna scelta libera — il compito chiedeva
+  esplicitamente "niente rifacimenti, niente funzionalità in più", quindi il
+  fix è il minimo che chiude il difetto segnalato più l'audit richiesto degli
+  altri campi. Un'unica scelta di merito: **fix alla radice (query SQL)
+  oltre che nel parser**, non solo nel parser — l'alternativa scartata era
+  correggere solo il confronto Python contro `'true'`, ma quello resta fragile
+  a un futuro cambio di comportamento di Postgres/psql; fissare l'encoding
+  lato query lo rende deterministico e testabile.
+- **Test eseguiti**:
+  - `ruff check bench/soak/` → pulito. `python3 -m py_compile` → sintassi
+    valida su entrambi i file toccati.
+  - **Test mirato del fix** (mock di `run()`, 4 casi): `active` `'t'` → `True`;
+    `'f'` → `False`; un valore inatteso `'true'` (il difetto originale) →
+    `None` + warning, **non** `False`; una riga non riconosciuta → warning,
+    non scartata in silenzio. Tutti e quattro verificati con `assert` diretti
+    sull'output di `sample_postgres`.
+  - **Prova a secco end-to-end** (10 s, stack spento, questa sandbox senza
+    Docker): 3 campioni, ogni sottosistema degradato con `error` esplicito,
+    e — a differenza di prima — **ogni degradazione ora compare in
+    `soak.err.log`** per ciascun campione, non solo silenziosamente nel
+    JSON. `verdict.py` gira senza eccezioni sui campioni con `_warnings`
+    nel dizionario `containers` (bug collaterale trovato e corretto in
+    `verdict.py`: iterava su `containers.items()` inclusa la chiave
+    `_warnings`, che non ha `.get()` — ora salta le chiavi con prefisso `_`).
+  - **Verifica sullo stack reale (ENV-W) non eseguita da questa sessione**:
+    nessun accesso Docker qui. Resta alla sessione ENV-W confermare che
+    `active` legga correttamente lo stato vero del connettore.
+- **Costo della sessione**: `claude-sonnet-5`. Non ri-misurato con
+  `get_session` per questa singola entry (richiesta esplicita di velocità
+  nel compito — "urgente e piccolo"); cumulativo dall'inizio sessione nella
+  prossima entry di chiusura fase.
+- **Non funziona / sospeso**: verifica reale su ENV-W con connettore attivo,
+  da fare al lancio del soak.
+- **Prossimo passo per la sessione successiva**: sulla Z8, `git pull` su
+  `feature/soak-harness` (ora a `2b4f4ad`) e ripetere la prova a secco di 10
+  minuti prima del soak pieno — v. comando nella quarta entry, invariato.
+- **Decisioni richieste all'owner**: nessuna.
+
+---
+## 2026-08-27 (sesta entry) — sessione remota (cloud) — Sessione A, exclusivity
+e stato pipeline nel manifest del soak (stessa collocazione, anticipo di #44)
+
+- **Contesto**: il fix della quinta entry è stato verificato con successo su
+  ENV-W (`active` legge `False` reale quando lo slot è davvero fermato, `True`
+  quando è attivo — 5/5 sonde, `warnings` sempre vuoto). Il soak parziale è
+  **partito alle 14:06:35Z, gira fino alle 21:30Z sotto la versione già
+  pushata**: questa sessione non lo tocca. La supervisione ha trovato durante
+  l'avvio che `manifest.json` scriveva `"exclusivity": "unknown"` come
+  costante cablata, senza raccogliere stato del connettore/slot: ENV-W li ha
+  scritti a mano sotto una chiave `operator_recorded`, dichiarata come
+  inserimento manuale — scelta giusta per non far credere che l'harness li
+  raccogliesse da solo. Questo lavoro chiude il gap per il **prossimo** run
+  (T-SOAK-24h vero), non tocca quello in corso.
+- **Fatto** (commit `fe91a74` su `feature/soak-harness`):
+  - **`--exclusivity exclusive|shared|unknown`** (default `unknown`) su
+    `run.sh`, scritto in `manifest.json` al posto della costante. Dichiarato
+    da chi lancia il run, mai inferito.
+  - **`sample.py --mode init`**: raccolta one-shot allo start del run —
+    stato del connettore CDC (Kafka Connect REST
+    `/connectors/<nome>/status`) e stato dello slot di replica — scritta in
+    `manifest.json.initial_conditions`. Stessa disciplina del campionatore
+    periodico: irraggiungibile → `null` + `error` esplicito, mai un valore
+    inventato.
+  - **Non aggiunto nulla per il campionamento periodico di GPU/RAM/load**
+    durante il run: **esisteva già**. `sample_host()` lo raccoglie a ogni
+    intervallo dalla quarta entry, e `verdict.py`'s `host_exclusivity`
+    aggrega già min/max VRAM usata sull'intero `samples.jsonl` — la parte
+    "run-check" di #44 (distinguere un run esclusivo dall'inizio alla fine
+    da uno diventato condiviso a metà) è quindi già coperta dai dati che il
+    campionatore scrive da quando esiste, non da codice nuovo di questa
+    entry.
+- **Decisioni prese** (e perché — alternative scartate):
+  - **Fermata al punto 2 del compito** (flag + raccolta iniziale), **senza**
+    costruire il pre-check/classificatore di #44 (il gate che rifiuta un run
+    su macchina condivisa, la logica `exclusive`/`shared` automatica).
+    *Motivo*: #44 ha una definition of done più ampia, propria di Fase 2, e
+    il compito stesso autorizzava a fermarsi qui se il resto "cresce troppo"
+    — costruirla ora sarebbe invadere lo scope di un'altra issue dalla
+    sessione sbagliata. Il punto 3 (campionamento periodico) non ha
+    richiesto questa scelta perché **era già soddisfatto** dal lavoro
+    precedente, non per aver tagliato scope.
+  - **`initial_conditions` come oggetto annidato nel manifest**, non chiavi
+    piatte allo stesso livello di `exclusivity`: tiene insieme ciò che è
+    "stato iniziale dichiarato dalla pipeline" separato da ciò che è
+    "configurazione del run", leggibile senza ambiguità da chi apre il
+    manifest fra mesi.
+  - **`--mode init` dentro `sample.py` esistente**, non un secondo script:
+    riusa `sample_postgres()` per lo stato dello slot invece di duplicare la
+    query, e riusa la stessa disciplina di errore. *Alternativa scartata*:
+    uno script `bench/soak/lib/init.py` separato — scartata perché avrebbe
+    duplicato la query psql e il pattern di errore già scritti.
+- **Test eseguiti**:
+  - `bash -n run.sh`, `python3 -m py_compile sample.py`, `ruff check
+    bench/soak/` → tutti puliti.
+  - `python3 bench/soak/lib/sample.py --mode init` isolato (nessun Docker in
+    questa sandbox) → JSON valido, `connector.error` e `postgres_error`
+    popolati, nessun crash, exit 0.
+  - `run.sh --interval 2 --duration 6 --exclusivity shared` end-to-end →
+    `manifest.json` contiene `"exclusivity": "shared"` e
+    `initial_conditions` popolato coerentemente con la degradazione
+    attesa (niente Docker qui).
+  - `run.sh --exclusivity bogus` → rifiutato con messaggio esplicito, exit
+    2 (validazione dei tre soli valori ammessi).
+  - Default invariato: `run.sh` senza `--exclusivity` → `"unknown"` nel
+    manifest, come prima.
+  - **Non toccato il soak in corso su ENV-W** (né il branch nel punto in cui
+    lo sta eseguendo, né alcun file mentre gira): verificato leggendo la
+    richiesta della supervisione prima di agire.
+- **Costo della sessione**: `claude-sonnet-5`, non ri-misurato per questa
+  singola entry (stesso criterio di urgenza della quinta) — cumulativo alla
+  prossima chiusura di fase.
+- **Non funziona / sospeso**: la classificazione automatica exclusive/shared
+  e il pre-check che blocca un run su macchina condivisa restano **aperti,
+  di #44, Fase 2** — non iniziati qui, per costruzione.
+- **Prossimo passo per la sessione successiva**: al termine del soak in
+  corso (21:30Z) o al lancio del prossimo, usare
+  `bench/soak/run.sh ... --exclusivity <valore dichiarato>` invece di
+  editare `manifest.json` a mano. Chi apre #44 in Fase 2 trova già scritti:
+  il flag di dichiarazione, la raccolta di stato iniziale, e il riepilogo
+  GPU/RAM/load per-campione — gli resta solo il pre-check che blocca un run
+  e la classificazione automatica.
+- **Decisioni richieste all'owner**: nessuna.
+
+---
+
+## Sessione ENV-W (Z8) — 28/08/2026, ~12:10Z — chiusura e archiviazione del soak `20260827-1406-envw-c6b56d3`
+
+- **Ruolo**: host di verifica. Nessun codice committato: solo report di run,
+  questa entry, e l'annotazione a un report esistente.
+- **Contesto**: le sessioni si sono fermate la sera del 27/08 per esaurimento
+  dei crediti settimanali, con il soak in corso e nulla pushato. Il limite si
+  è azzerato alle 12:00Z del 28/08. **Il campionatore girava distaccato
+  (PPID 1) e non dipendeva dalla sessione**: ha raggiunto la sua fine
+  prevista alle 21:29:44Z contro un `planned_end` di 21:30:00Z. Sette ore di
+  misura sopravvissute a due cadute di sessione perché l'avvio era
+  distaccato e il formato append-only con `flush`+`fsync` per riga. È una
+  proprietà di progetto dell'harness, non fortuna, e va tenuta.
+- **Priorità eseguita nell'ordine prescritto**: verifica integrità →
+  archiviazione verificata → verdetto → report. **Niente è stato spento,
+  riavviato o toccato prima che la copia fosse verificata.**
+- **Integrità dei grezzi** (verificata *prima* di qualsiasi altra operazione):
+  427 righe, tutte JSON valido, `seq` contigui 0…426, nessun
+  `postgres.error` né `qdrant.error`, nessun campione con `warnings` non
+  vuoti. `soak.err.log` a 0 byte — verificato **due volte e per vie
+  indipendenti**: `wc -c` = 0 e SHA256 = `e3b0c442…852b855`, che è l'hash
+  del file vuoto.
+- **Archiviazione**: `~/NORTHSTREAM-archive/20260827-1406-envw-c6b56d3/` con
+  `SHA256SUMS`. Copia verificata con `sha256sum -c` contro gli hash
+  calcolati sull'origine *prima* della copia: 3 file su 3 `OK`.
+- **Verdetto §4.3** (`bench/soak/verdict.py`, output integrale nel report):
+  - (a) crescita Qdrant → **WARN**, atteso: 1943→10 296 punti (+8 353,
+    1 131/h), monotòna, nessuna retention — è A-3, aperto fino a v0.0.4.
+  - (b) slot di replica → **UNKNOWN** per soglia non dichiarata; tendenza
+    piatta, WAL trattenuto **max 0,060 MiB** su 7,4 h di generatore attivo.
+  - (c) eventi persi → **OK**: DB +8 352, Qdrant +8 353; divario assoluto
+    **94/94/96** (min/mediana/max) su 427 campioni.
+  - (d) RSS vs tier → **UNKNOWN** per tetto non dichiarato; picco 15 985 MiB
+    su 19 container.
+- **Le due `UNKNOWN` sono il verdetto corretto, non un buco.** Il piano non
+  dichiara né una soglia per lo slot né un tetto RSS per lo stack full:
+  l'unico tetto scritto è quello di `core` (≤ 14 GB, T-PROF, v0.0.3, e su
+  ENV-L). *Alternativa scartata*: passare una soglia inventata da riga di
+  comando per ottenere un `OK`/`WARN` — scartata perché avrebbe prodotto un
+  verdetto senza referente nel piano, cioè un numero verde che non risponde
+  a nessuna domanda.
+- **Il ritrovamento del run — la misura "prima" di P-5, ottenuta a costo zero**
+  da campioni raccolti per altro: RSS totale **12 376 MiB al primo campione
+  (a freddo) → 15 174 mediana → 15 985 picco**. **Trino passa da 4 109 a
+  7 119 MiB in 7,4 ore** (+73%) e da solo spiega 3 010 dei 3 571 MiB di
+  crescita dello stack, mentre Elasticsearch (1 712→1 719, l'unico con
+  `-Xmx` fisso nel compose) e Kafka (960→978) restano piatti. È P-5 visto
+  in diretta: una JVM senza tetto su 256 GB dimensiona l'heap su una
+  frazione della RAM di sistema e poi lo riempie. **Vale come termine di
+  paragone "prima" contro un "dopo" sulla stessa macchina, non come valore
+  di tier** — piano §143: le misure di RAM su ENV-W non sono trasferibili
+  ai tier, sono un limite superiore.
+- **Annotazione a `docs/runs/20260826-2053-envw-5eb456a-baseline.md`**
+  (**annotato, non riscritto**): i **9,52 GiB** di quel report sono una
+  **lettura a freddo di una grandezza che cresce**. Nella sua tabella Trino
+  compare a 1 067 MiB — lo stesso servizio nel suo istante più freddo. Gli
+  esiti dei test di quel run restano validi e il numero non è sbagliato:
+  cambia solo che cosa se ne può concludere.
+- **Slot `active: true` in 427 campioni su 427**, con `warnings` sempre
+  vuoto. Chiude in positivo la storia del 27/08, quando il campionatore
+  riportava `inactive` ovunque per un difetto di parsing (`active == "t"`
+  contro un Postgres che rende il booleano come `true`), corretto in
+  `2b4f4ad`.
+- **Il divario costante a ~95** fra contatore DB e punti Qdrant è **rumore
+  di campionamento fra due letture non atomiche**, non un tasso di perdita:
+  se si perdessero eventi il divario crescerebbe, e su 7,4 h non cresce
+  (94 → 94 → 96).
+- **La domanda "l'agent ha smesso di indicizzare?" ha risposta: no,
+  fisiologico.** VRAM con mediana *e* p95 entrambi a 362 MiB, solo 5
+  campioni su 427 (1,2%) sopra 1 GiB — ma nello stesso arco Qdrant è
+  cresciuto di 8 353 punti a ritmo costante. L'ingest usa il modello di
+  embedding piccolo; il footprint grosso appare con la chat (~6,5 GiB) e con
+  il 32b in EVAL (19,8 GiB).
+- **Esclusività confermata per misura**: nessun processo di calcolo estraneo
+  sulla GPU in nessuno dei 427 campioni; l'unico consumatore è il nostro
+  `llama-server`.
+- **Stato della macchina al 28/08 12:10Z** (rilevato, non modificato): GPU a
+  362 MiB / 24 576, 0% util, unico processo `llama-server` — **nessun tenant
+  vast.ai rientrato**. Stack full **ancora in piedi**, 19 container, uptime
+  24 h, nulla caduto nella notte; `debezium-connect` a 22 h perché riavviato
+  a mano durante la verifica del campionatore del 27/08.
+- **Non fatto, e perché**: T0.7, verifica di #44, T-PROF e il **secondo soak
+  ("dopo" di P-5") non sono stati eseguiti.** La finestra esclusiva di 12 h è
+  scaduta alle ~08:15Z del 28/08 e **va richiesta di nuovo all'owner**:
+  lanciare il secondo soak di iniziativa significherebbe occupare la
+  macchina per 8 ore senza garanzia. Nessuna nightly innescata di
+  iniziativa, per lo stesso motivo.
+- **Limite dichiarato del confronto che verrà**: `mem_limit` (#21) e
+  `jvm.config` (#22) cambiano **insieme**. Un "dopo" piatto proverà
+  l'intervento **combinato**, non quale delle due metà lo produce. Se serve
+  attribuirlo, servono due run.
+- **Costo della sessione**: **non misurabile** (sessione bridge).
+- **Decisioni richieste all'owner**: una — se e quando concedere una nuova
+  finestra esclusiva per il secondo soak (~8 h) e per le tre misure rimaste.

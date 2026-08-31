@@ -15,6 +15,15 @@ recency (A-2), rimozione del boost keyword su `KNOWN_SITES` (A-1), `/health`
 reale (A-5).)*
 
 ### Fixed
+- `bench/t0/run.sh`: **T0.13 non veniva mai eseguita.** Le suite sono liste scritte
+  a mano, e aggiungere il file del test non aggiunge il test: T0.13 esisteva, era
+  dichiarata XFAIL nelle attese, e non compariva in `ci`/`static`/`core`/`full`.
+  Ha passato il primo giorno nello stato peggiore possibile — un'aspettativa che
+  nessuno esercita è indistinguibile da un verde. Ora è in `static`, `core` e
+  `full`, **e il runner avverte** se un test dichiarato in `expected/current.json`
+  non compare in nessuna suite, così la classe si chiude e non solo l'istanza
+  (**P-5**, [#24](https://github.com/danielesalpietro/NORTHSTREAM/issues/24)).
+
 - **Point-id deterministici da `(topic, partition, offset)` (A-3, O5.1).** L'id
   di un punto Qdrant era un contatore in RAM che ripartiva da zero a ogni avvio
   del container, contro un volume persistente: l'agent **sovrascriveva il corpus

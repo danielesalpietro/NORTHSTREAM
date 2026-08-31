@@ -57,9 +57,9 @@ NS_TEST_TIMEOUT="${NS_TEST_TIMEOUT:-600}"
 # client reaching the broker's EXTERNAL listener — so ci-smoke can run it on
 # every push instead of waiting for the nightly on ENV-W.
 SUITE_CI="T0.1 T0.2 T0.3 T0.4 T0.6 T0.8 T0.11"
-SUITE_STATIC="T0.1 T0.12 T-REPRO"
-SUITE_CORE="T0.1 T0.2 T0.3 T0.4 T0.5 T0.6 T0.7 T0.8 T0.11 T0.12 T-REPRO"
-SUITE_FULL="T0.1 T0.2 T0.3 T0.4 T0.5 T0.6 T0.7 T0.8 T0.9 T0.10 T0.11 T0.12 T-REPRO"
+SUITE_STATIC="T0.1 T0.12 T0.13 T-REPRO"
+SUITE_CORE="T0.1 T0.2 T0.3 T0.4 T0.5 T0.6 T0.7 T0.8 T0.11 T0.12 T0.13 T-REPRO"
+SUITE_FULL="T0.1 T0.2 T0.3 T0.4 T0.5 T0.6 T0.7 T0.8 T0.9 T0.10 T0.11 T0.12 T0.13 T-REPRO"
 
 while (($#)); do
     case "$1" in
@@ -91,6 +91,25 @@ esac
 
 if [[ -n "$ONLY" ]]; then
     TESTS="$(echo "$ONLY" | tr ',' ' ')"
+fi
+
+# A test declared in expected/current.json but absent from every suite never
+# runs, and an expectation nothing exercises is indistinguishable from a green.
+# T0.13 spent its first day in exactly that state: written, declared XFAIL, and
+# silently never executed, because the suites are hand-maintained lists and
+# adding the file is not adding the test. Checked here rather than trusted.
+orphans="$(NS_EXPECTED="$EXPECTED_FILE" \
+    NS_ALL_SUITES="$SUITE_CI $SUITE_STATIC $SUITE_CORE $SUITE_FULL" python3 -c '
+import json, os, sys
+try:
+    declared = set(json.load(open(os.environ["NS_EXPECTED"]))["expected"])
+except Exception as exc:            # never fail the run over the guard itself
+    sys.exit(0)
+covered = set(os.environ["NS_ALL_SUITES"].split())
+print(" ".join(sorted(declared - covered)))
+' 2>/dev/null)"
+if [[ -n "${orphans// /}" ]]; then
+    echo "WARNING: declared in expected/current.json but in no suite, so never run: ${orphans}" >&2
 fi
 
 test_script() {

@@ -23,7 +23,7 @@ tutti con id UUID. Report:
 
 **T-SOAK-24h è in corso** — il primo del progetto, lanciato il 31/08 alle
 16:44:38Z su ENV-W: **`RUN_ID 20260831-1644-envw-4d5f24a`**, intervallo 60 s,
-durata 86 400 s, `--exclusivity shared`, distaccato sotto **PPID 1**, con
+durata 86 400 s, `--exclusivity shared` — **dichiarazione sbagliata, in senso conservativo**: `caliper-flowise` si era fermato alle 16:19:47Z, 25 min prima del lancio, e l'host è stato libero da estranei per tutto il run (addendum in fondo al file) —, distaccato sotto **PPID 1**, con
 `SHA256SUMS` che il run scrive da sé a fine corsa. Fine attesa **01/09 ~16:44Z**.
 Lo stack è stato riavviato **a freddo** (19 container, 22 min di assestamento
 dichiarati) proprio per restare confrontabile col "prima": Trino partiva da
@@ -305,3 +305,51 @@ della collection.
   3. `caliper-flowise` resta acceso sull'host: non l'ho toccato perché è di un
      altro progetto. Se i run futuri devono essere `exclusive`, spegnerlo è una
      scelta dell'owner.
+
+### Addendum 2026-09-01 06:0xZ — `exclusivity: shared` nel manifest è sbagliato (in senso conservativo)
+
+Su segnalazione dell'owner («`caliper-flowise` non dovrebbe partire, fermalo pure»)
+è emerso che **il container era già fermo**, e da prima del lancio:
+
+| Fatto | Valore misurato |
+|---|---|
+| `caliper-flowise` `FinishedAt` | **2026-08-31T16:19:47Z**, `ExitCode 0` (log: «Shutting down Flowise...») |
+| Soak `started_at` | **2026-08-31T16:44:38Z** — **25 minuti dopo** |
+| Container estranei in esecuzione durante il run | **nessuno** |
+
+Quindi **per l'intera durata del run l'host è stato libero da estranei**: il valore
+vero era `exclusive`, non `shared`.
+
+**Come è nato l'errore, che è la parte utile.** La dichiarazione è stata presa da uno
+`docker ps` delle ~16:1xZ — *prima* del teardown — e **non è stata ri-verificata al
+momento del lancio**, 25 minuti dopo. È lo stesso modo di sbagliare delle tre lezioni
+già in `CLAUDE.md` §5: un campo dichiarato da un ricordo invece che da una misura. Il
+rimedio è meccanico e va nell'harness, non nella buona volontà: **`--exclusivity`
+dovrebbe essere ri-verificato da `run.sh` all'istante del lancio** e la dichiarazione
+del lanciatore confrontata con lo stato osservato, con un avviso in caso di divergenza.
+
+**Perché il manifest non è stato corretto.** Il campo è documentato come «declared by
+whoever launches the run, not inferred». È il verbale di una dichiarazione: riscriverlo
+a posteriori farebbe dire all'archivio che era stato dichiarato `exclusive`, che è
+falso. La correzione sta qui, accanto al dato, non al posto suo — in un progetto che si
+è già bruciato con misure aggiustate dopo il fatto. `SHA256SUMS` non era ancora scritto,
+quindi la scelta è deliberata e non forzata dalla tecnica.
+
+**Effetto sul verdetto: nessuno.** L'errore è nella direzione conservativa — dichiara
+condizioni peggiori di quelle reali. Chi emette il verdetto legga `shared` nel manifest
+e **questa riga** come correzione: le condizioni erano migliori del dichiarato.
+
+**Causa dello stop: non attribuita.** Il teardown di northstream girava attorno alle
+16:19Z, ma non può averlo toccato — `caliper-flowise` ha label di progetto `caliper` ed
+era attaccato alla sola rete `caliper_caliper-ai`, mai a quella di northstream (il
+`down` ha rimosso `wap-northstream-lab_default` senza errori di endpoint attivi). Il
+buffer eventi di Docker non copre più quell'istante. Essere rimasto giù per 14 h con
+`restart=always` indica uno **stop esplicito**, non un crash. Registrato come non
+spiegato invece che dedotto dalla coincidenza temporale.
+
+**Azione eseguita** (autorizzata dall'owner): `docker update --restart=no
+caliper-flowise` — era `always`, ora `no`, container `exited`. Non ripartirà al
+prossimo riavvio del daemon o dell'host. Gli altri dieci container del progetto
+`caliper` sono tutti `Exited` e hanno `unless-stopped` (tranne `caliper-flowise-init`,
+già `no`): **non sono stati toccati**, perché l'owner ha nominato solo `flowise`. Se il
+progetto `caliper` non deve tornare su del tutto, è una decisione a parte.

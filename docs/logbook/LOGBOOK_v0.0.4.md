@@ -353,3 +353,97 @@ prossimo riavvio del daemon o dell'host. Gli altri dieci container del progetto
 `caliper` sono tutti `Exited` e hanno `unless-stopped` (tranne `caliper-flowise-init`,
 già `no`): **non sono stati toccati**, perché l'owner ha nominato solo `flowise`. Se il
 progetto `caliper` non deve tornare su del tutto, è una decisione a parte.
+
+### Addendum 2026-09-01 ~10:15Z — controllo in corsa: VRAM a 9 MiB, e cosa c'è sotto
+
+Controllo richiesto dall'owner dopo aver visto `nvidia-smi` a **9 MiB / 10 MiB,
+«No running processes found»** contro i **362 MiB** stazionari dei soak del 27-28/08.
+Solo letture: lo stack non è stato toccato e il soak non è stato interrotto.
+
+**Il flusso è vivo e non perde.** Su 991 campioni (16:44:39Z → 10:10:21Z, 17 h 26 min):
+
+| | primo | ultimo | delta |
+|---|---|---|---|
+| `orders` | 55 881 | 65 463+ | **+9 582** |
+| `sensor_readings` | 55 775 | 65 419+ | **+9 644** |
+| `qdrant.points_count` | 37 903 | 57 130+ | **+19 227** |
+
+DB **+19 226** contro Qdrant **+19 227**: coincidono a meno di uno. Il divario
+`db − qdrant` resta **73 752 ±2 per tutti i 991 campioni** — è l'offset storico
+(righe che precedono il corpus), non una perdita che si accumula. Nessun contatore
+ha smesso di crescere. **Non siamo nel caso FAIL di §4.3.1(a).**
+
+**La VRAM a 9 MiB non ha nessuna delle due spiegazioni benigne attese.** `ollama ps`:
+
+```
+NAME                    SIZE    PROCESSOR    UNTIL
+granite-embedding:30m   66 MB   100% CPU     4 minutes from now
+```
+
+Il modello **è caricato** — quindi non è `keep_alive` scaduto né ricarica a ogni
+chiamata. Gira **100% CPU**. È l'anomalia già aperta il 30/08 in `CLAUDE.md`
+(«Ollama gira 100% CPU dal riavvio del 30/08»), che **sopravvive a un avvio a freddo
+con `--gpu`** e a un container che vede entrambe le schede (verificato al lancio con
+`nvidia-smi -L` dentro il container).
+
+**Conseguenza da non perdere: i numeri VRAM di questo run non servono a dimensionare
+le schede.** Confronto sui campioni, con le finestre dichiarate:
+
+| | VRAM mediana | campioni > 100 MiB | ollama RSS mediana |
+|---|---|---|---|
+| **prima** — soak #2, 420 campioni, 7,4 h | **362,0 MiB** | **420 / 420** | 686,1 MiB |
+| **dopo** — questo run, 991 campioni, 17,4 h | **19,0 MiB** (9+10 a vuoto) | **22 / 991** (max 1 312) | 507,2 MiB |
+
+Il "prima" aveva l'embedding **residente in GPU** per l'intero run; il "dopo" lo ha in
+CPU. **È una seconda variabile cambiata fra prima e dopo**, non voluta, e §4.3.2 dice
+che un confronto ne varia una sola: va dichiarata in testa al report. Non invalida (a),
+(b), (c) — che non passano dalla GPU — ma tocca (d), perché `ollama` è il servizio
+esente il cui RSS va riportato a parte, e qui è **più basso** in CPU (507 contro 686),
+non più alto.
+
+**Due picchi di carico, e 250 fallimenti che non hanno prodotto perdita.**
+`docker logs -t` sull'agent: **1 solo** fallimento alle 16:23:14Z (warm-up, prima del
+lancio, ed è l'unico con la firma di Ollama —
+`HTTPConnectionPool(host='ollama'...) Read timed out (read timeout=30)`), poi
+**niente per ~16 ore**, poi **250 fallimenti** tutti con testo **`timed out` nudo**,
+in due raffiche che coincidono esattamente con due picchi di `load1`:
+
+```
+08:30:27Z load1=2.25   08:35:40Z load1=30.27   08:39:49Z load1=6.25
+08:48:09Z load1=4.82   08:52:18Z load1=27.92   08:55:26Z load1=10.51
+```
+
+Nella finestra 08:20Z → 10:10Z: **db +2058, qdrant +2058, differenza esattamente 0.**
+Se i 250 eventi fossero stati persi mancherebbe il 12% del corpus. Non manca.
+
+**Il meccanismo non è stabilito, e non lo deduco.** Il codice è A-4 alla lettera —
+`except Exception as e: print("embedding/upsert failed:", e)`, nessun retry, nessuna
+coda — e il consumer **non ha `group_id`** (`auto_offset_reset="latest"`), quindi non
+committa offset e **non c'è redelivery**: un messaggio fallito è perso davvero. Due
+candidati, nessuno provato:
+
+1. **Timeout lato client su scritture che sono comunque atterrate.** Il testo `timed
+   out` nudo è la firma del client Qdrant (`QdrantClient(url=...)`, senza timeout
+   esplicito), diversa da quella di Ollama vista alle 16:23. Sotto `load1` a 30 il
+   client rinuncia ad aspettare mentre il server scrive. Spiegherebbe zero perdita e
+   250 righe di errore. **È l'ipotesi che preferisco**, per la firma dell'eccezione.
+2. **I messaggi falliti non corrispondono a righe di tabella** (metadati Debezium che
+   cadono nel `TOPIC_PATTERN`): perderli non allargherebbe il divario.
+
+Discriminarli è una lettura, non un esperimento: basta correlare gli offset Kafka dei
+fallimenti con gli id `uuid5` presenti in Qdrant. **Va fatto prima del verdetto**,
+perché decide se il check (c) può dire «zero eventi persi» o soltanto «zero righe di
+tabella mancanti».
+
+**L'origine dei due picchi di `load1` a 30 su 32 thread non è spiegata.** Il progetto
+`caliper` era fermo e nessun container estraneo girava. Da annotare, non da dedurre.
+
+**Difetto nei dati del "prima", da conoscere prima di rileggerli.** Il soak #2 ha
+**12 campioni su 420** in cui `containers` non contiene i 19 servizi ma la sola chiave
+`_error: "docker: timed out after 30s"`. Sommandoli ingenuamente danno **RSS totale 0**
+— infatti il minimo della serie risulta `0.0 MiB`. Chi calcola minimo o media sulla
+serie del "prima" ottiene un numero sbagliato: **un campione fallito si legge come
+consumo bassissimo invece che come misura assente.** È la stessa famiglia della lezione
+di §5 sul campo derivato che deve distinguere «falso» da «non l'ho potuto sapere», e
+la stessa forma del corollario di §4.3.1 («un tetto troppo stretto si legge come poco
+consumo»). I campioni `_error` vanno **esclusi**, non sommati.

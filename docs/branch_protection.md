@@ -100,13 +100,33 @@ Effetto sul lavoro quotidiano: **nessuno**. Nessuno dei flussi descritti in
 
 ## 5. Come applicarle (solo owner)
 
-1. Settings → Rules → Rulesets → **New ruleset** → *Import a ruleset* →
-   selezionare il file JSON.
-2. Ripetere per i tre file. Verificare che *Enforcement status* sia **Active**
-   e che *Bypass list* sia **vuota**.
-3. Se l'import di `protect-version-tags.json` viene rifiutato sulla regola
-   `update`, rimuovere quell'oggetto dal JSON, importare il resto e attivare
-   *Restrict updates* dalla UI del ruleset.
+L'import da file JSON **non salva da solo**: apre il form del ruleset
+precompilato, e finché non si preme il bottone verde **Create** in fondo alla
+pagina non viene creato nulla — senza alcun messaggio che lo segnali. È il modo
+in cui questa proposta è rimasta inattiva per due giri di verifica (§7).
+
+**Via consigliata: creazione manuale.** Sono quattro campi per ruleset, e ogni
+passaggio è visibile:
+
+1. Settings → Rules → Rulesets → **New ruleset** → *New branch ruleset*
+2. **Ruleset Name**: `protect-develop`
+3. **Enforcement status**: `Active`
+4. **Bypass list**: lasciarla vuota
+5. **Target branches** → *Add target* → *Include default branch*
+6. **Rules**: spuntare `Restrict deletions` e `Block force pushes`
+7. **Create** ← il passaggio che salva
+
+Ripetere per gli altri due:
+
+| Ruleset | Tipo | Target | Rules da spuntare |
+|---|---|---|---|
+| `protect-develop` | branch | *Include default branch* | Restrict deletions · Block force pushes |
+| `protect-release-branches` | branch | *Include by pattern* → `release/**` | Block force pushes |
+| `protect-version-tags` | **tag** | *Include by pattern* → `v*` | Restrict deletions · Restrict updates · Block force pushes |
+
+I JSON in `.github/rulesets/` restano la forma canonica di ciò che va
+configurato — utili per rileggere l'intenzione e per ricreare le regole se un
+giorno si perdono — non un'installazione automatica.
 
 ## 6. Falsificazione (obbligatoria — `CLAUDE.md` §5)
 
@@ -243,12 +263,15 @@ risulti fatto due volte.
 Misure totali: **cinque force-push accettati su cinque** (quattro da sessione
 remota su ref diversi, uno dall'owner), nessun `GH013` mai osservato.
 
-**Causa più probabile, da verificare in un colpo d'occhio nella lista dei
-ruleset**: l'import di GitHub non crea la regola, apre il **form precompilato**
-— se non si preme *Create* in fondo alla pagina, il ruleset non esiste e nulla
-segnala che sia andata così. Un elenco che mostra meno di tre righe conferma
-questa lettura; tre righe `Active` la escludono e spostano il sospetto sul
-target pattern.
+**Causa accertata**, letta nella pagina dei ruleset dopo il terzo giro:
+
+> *You haven't created any rulesets*
+
+**Zero ruleset esistenti**, dopo due import dichiarati completati. L'import di
+GitHub non crea la regola: apre il **form precompilato**, e senza il bottone
+*Create* in fondo alla pagina non salva nulla né segnala che non l'ha fatto.
+Non erano disabilitati e non era un problema di pattern: non c'erano. Correzione
+in §5, che ora descrive la creazione manuale.
 
 **Lezione, che vale oltre questo caso** (`CLAUDE.md` §5): una protezione
 importata e mai vista rifiutare un push è indistinguibile da una protezione

@@ -228,6 +228,34 @@ git push --force origin probe:refs/heads/release/v9.9.9-ruleset-test
 In entrambi i casi *Settings → Rules → Rule Insights* mostra il push e dice se è
 stato *bypassed* e da chi: è la lettura da fare per prima.
 
+### Terzo giro — la prova decisiva, dalla macchina dell'owner
+
+```
+git push --force origin FETCH_HEAD~1:refs/heads/release/v9.9.9-ruleset-test
+ + c60ef21...5eb456a FETCH_HEAD~1 -> release/v9.9.9-ruleset-test (forced update)
+```
+
+**Accettato.** L'ipotesi (B) è morta: non è un bypass concesso alle sessioni
+automatiche, perché la regola non ferma nemmeno l'owner dal suo portatile.
+Resta **(A): nessun ruleset è in vigore su `release/**`**, nonostante l'import
+risulti fatto due volte.
+
+Misure totali: **cinque force-push accettati su cinque** (quattro da sessione
+remota su ref diversi, uno dall'owner), nessun `GH013` mai osservato.
+
+**Causa più probabile, da verificare in un colpo d'occhio nella lista dei
+ruleset**: l'import di GitHub non crea la regola, apre il **form precompilato**
+— se non si preme *Create* in fondo alla pagina, il ruleset non esiste e nulla
+segnala che sia andata così. Un elenco che mostra meno di tre righe conferma
+questa lettura; tre righe `Active` la escludono e spostano il sospetto sul
+target pattern.
+
+**Lezione, che vale oltre questo caso** (`CLAUDE.md` §5): una protezione
+importata e mai vista rifiutare un push è indistinguibile da una protezione
+inesistente. Qui la configurazione *sembrava* corretta in tre schermate diverse
+e non ha fermato un solo push. Nessun ruleset va considerato attivo prima del
+primo `GH013` osservato.
+
 ## 8. Nota per il logbook
 
 La entry di sessione va appesa a `docs/logbook/LOGBOOK_v0.0.4.md`, che esiste

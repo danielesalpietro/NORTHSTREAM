@@ -111,28 +111,85 @@ Effetto sul lavoro quotidiano: **nessuno**. Nessuno dei flussi descritti in
 ## 6. Falsificazione (obbligatoria — `CLAUDE.md` §5)
 
 Una regola mai vista rifiutare un push non è una protezione, è una decorazione.
-Prima di considerarle attive:
+La sonda va fatta su un ref **coperto dal ruleset** ma privo di valore: un branch
+`release/**` usa e getta è il candidato giusto, perché su `release/**` la
+cancellazione è consentita per progetto (§3) e quindi la prova si ripulisce da
+sola.
+
+**Attenzione al trigger CI**: `ci-static` e `ci-smoke` girano su `release/**`.
+Il commit di testa deve contenere `[skip ci]`, altrimenti la sonda accende
+25 minuti di runner per niente.
 
 ```bash
-# 1. aggiungere temporaneamente refs/heads/test/ruleset-* alle condizioni
-#    del ruleset protect-develop (UI: Target branches → Add pattern)
+git checkout -b release/v9.9.9-ruleset-test origin/develop
+git commit --allow-empty -m "throwaway: ruleset falsification [skip ci]"
+git push -u origin release/v9.9.9-ruleset-test        # atteso: OK (creazione consentita)
 
-git checkout -b test/ruleset-1 develop
-git push -u origin test/ruleset-1            # atteso: OK (creazione consentita)
-git commit --allow-empty -m "throwaway"
-git push --force origin test/ruleset-1       # atteso: RIFIUTATO — GH013 rule violations
-git push origin --delete test/ruleset-1      # atteso: RIFIUTATO — GH013 rule violations
+git commit --amend --allow-empty -m "throwaway: rewritten [skip ci]"
+git push --force origin release/v9.9.9-ruleset-test   # atteso: RIFIUTATO (GH013)
 
-# 2. rimuovere il pattern test/ruleset-* dal ruleset
-# 3. cancellare il branch di prova (ora consentito) e verificare che
-#    develop e i tag siano rimasti intatti:
-git ls-remote --tags origin | grep v0.0.3
+git push origin --delete release/v9.9.9-ruleset-test  # atteso: OK (per progetto)
 ```
 
-Un `git push --force` che **riesce** su `test/ruleset-1` significa che il
-ruleset non sta guardando quel ref: la regola è scritta ma non applicata.
+Per i tag, stessa logica con un tag `v*` usa e getta — ma la prova **stranisce
+un tag**: se le regole funzionano, il tag non è cancellabile finché non si
+disattiva il ruleset. È il costo della verifica, e vale la pena pagarlo una
+volta: contestualmente si collauda anche la via d'uscita (disattiva → cancella →
+riattiva), che è l'unica prevista visto che non ci sono bypass actor.
 
-## 7. Nota per il logbook
+**Nota su `develop`**: la regola *Restrict deletions* sul default branch non è
+falsificabile, perché GitHub rifiuta comunque la cancellazione del branch di
+default a prescindere dai ruleset. Resta utile come rete se un giorno il default
+cambia, ma non aspettarsi di vederla scattare.
+
+## 7. Esito della prima esecuzione — 2026-09-01
+
+Eseguita da sessione remota subito dopo l'import dei tre ruleset da parte
+dell'owner.
+
+| # | Prova | Ref | Atteso | Osservato | Verdetto |
+|---|---|---|---|---|---|
+| 1 | Creazione branch | `release/v9.9.9-ruleset-test` | OK | OK | — |
+| 2 | **Force-push** | idem | RIFIUTATO | **ACCETTATO**: `+ 07e1f87...b671e05 (forced update)`, exit 0, confermato da `git ls-remote` | **FAIL** |
+| 3 | Creazione tag `v0.0.0-ruleset-test` | `refs/tags/v*` | OK | `HTTP 403` dal proxy della sessione | non conclusivo |
+| 4 | Spostamento / cancellazione tag | idem | RIFIUTATO | il push non parte (403) | non conclusivo |
+| 5 | Cancellazione branch di prova | `release/**` | OK | il push non parte (disconnect del proxy) | non conclusivo |
+
+**Le prove 3-5 non dicono nulla sui ruleset**: le credenziali git di quella
+sessione remota non possono creare tag né cancellare ref, quindi il push non
+raggiunge mai la valutazione lato GitHub. Un 403 del proxy e un rifiuto GH013
+sono due cose diverse, e vanno lette come tali.
+
+**La prova 2 invece è arrivata a GitHub ed è stata accettata**: il ruleset
+`protect-release-branches` non era in vigore su quel ref al momento del test.
+Le cause possibili, in ordine di probabilità, da verificare nella UI:
+
+1. **Enforcement status ≠ Active.** Un ruleset importato e lasciato `Disabled`
+   compare in elenco identico a uno attivo. È la causa più comune.
+2. **Target pattern non applicato.** Aprire il ruleset → *Target branches*: deve
+   comparire il pattern `release/**`. Se l'import non ha tradotto la condizione,
+   la lista è vuota e il ruleset non copre nulla.
+3. **Bypass list non vuota.** Se l'import ha aggiunto *Repository admin* o l'app
+   che esegue il push, la regola c'è ma non si applica a chi conta.
+
+Lo strumento che distingue i tre casi è **Settings → Rules → Rule Insights**:
+elenca i push valutati e per ciascuno dice se è passato, se è stato rifiutato o
+se è stato **bypassato** e da chi. Se il force-push della prova 2 non compare
+affatto, siamo nel caso 1 o 2; se compare come *bypassed*, nel caso 3.
+
+**Residuo da ripulire a mano**: il branch `release/v9.9.9-ruleset-test`
+(commit vuoto `b671e05`) è rimasto su origin, perché la sessione che l'ha creato
+non può cancellare ref. Si toglie da
+https://github.com/danielesalpietro/NORTHSTREAM/branches o con
+`git push origin --delete release/v9.9.9-ruleset-test` da una macchina
+dell'owner — che è anche un secondo dato utile: se la cancellazione riesce e il
+force-push dalla stessa macchina viene invece rifiutato, la protezione è
+esattamente quella progettata.
+
+**Finché la prova 2 non diventa un rifiuto, i tre ruleset vanno considerati
+non verificati**, indipendentemente da come appaiono in elenco.
+
+## 8. Nota per il logbook
 
 La entry di sessione va appesa a `docs/logbook/LOGBOOK_v0.0.4.md`, che esiste
 **solo su `release/v0.0.4`** — branch lavorato in questo momento da un'altra
@@ -153,9 +210,14 @@ integra questa proposta. Testo pronto:
   il terzo rompe il release train a merge commit, il quarto blocca ogni sessione
   che committa in container senza chiavi. Nessun bypass actor: con l'owner admin,
   un bypass renderebbe le regole decorative.
-- **Test eseguiti**: nessuno a runtime (sessione senza permessi di admin sul
-  repo); procedura di falsificazione scritta in §6 del documento.
-- **Non funziona / sospeso**: le regole non sono attive — servono i permessi
-  dell'owner.
-- **Prossimo passo**: importare i tre ruleset ed eseguire la falsificazione §6.
+- **Test eseguiti**: falsificazione §6 eseguita il 01/09 — force-push su un branch
+  `release/**` di prova **ACCETTATO** (atteso: rifiutato): i ruleset importati non
+  erano in vigore su quel ref. Prove su tag e cancellazioni non conclusive (403 del
+  proxy della sessione, non di GitHub). Diagnosi e residuo da ripulire in §7 del
+  documento.
+- **Non funziona / sospeso**: i tre ruleset sono importati ma **non verificati**:
+  il force-push di prova è passato. Resta su origin il branch di prova
+  `release/v9.9.9-ruleset-test`, che questa sessione non può cancellare.
+- **Prossimo passo**: verificare in Rule Insights perché il force-push è passato,
+  correggere il ruleset e rieseguire la prova 2 fino al rifiuto GH013.
 ```

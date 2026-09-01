@@ -21,6 +21,27 @@ attraverso un riavvio: **0 punti preesistenti cambiati, 0 spariti**, +10 nuovi
 tutti con id UUID. Report:
 [`20260831-1209-envw-db4c22a-a3.md`](../runs/20260831-1209-envw-db4c22a-a3.md).
 
+**T-SOAK-24h è in corso** — il primo del progetto, lanciato il 31/08 alle
+16:44:38Z su ENV-W: **`RUN_ID 20260831-1644-envw-4d5f24a`**, intervallo 60 s,
+durata 86 400 s, `--exclusivity shared`, distaccato sotto **PPID 1**, con
+`SHA256SUMS` che il run scrive da sé a fine corsa. Fine attesa **01/09 ~16:44Z**.
+Lo stack è stato riavviato **a freddo** (19 container, 22 min di assestamento
+dichiarati) proprio per restare confrontabile col "prima": Trino partiva da
+**981 MiB** nel soak #2 e stava a **1 470 MiB** sullo stack caldo da 20 h — partire
+di lì avrebbe variato due cose invece di una. Primo campione: RSS totale
+**7 691,8 MiB**, Qdrant **37 903** punti, slot attivo, `soak.err.log` vuoto.
+
+**Al ritorno, due trappole già identificate.** (1) **Integrità prima del
+verdetto**: `seq` contigui, `soak.err.log`, `sha256sum -c SHA256SUMS` — e dire ciò
+che manca invece di interpolare. (2) **Il check (a) va calcolato a mano**, perché
+`verdict.py:62` implementa ancora quello vecchio (`any(points[i] <= points[i-1])`
+→ OK), che su ~1 440 campioni non può fallire e non legge mai il flusso eventi del
+DB che §4.3.1 ora richiede: **comanda il piano**. E una **premessa di §4.3.1 si è
+sfaldata**: motiva il WARN di (a) con «finché A-3 non è chiuso non esiste una
+retention», ma **A-3 è chiuso e la retention non esiste comunque** — l'unico
+`maxlen` in `stream-agent/app.py` è il buffer in RAM, niente sulla collection.
+La conclusione (niente retention → WARN) regge, la motivazione no.
+
 **Due cose che la prossima sessione deve sapere e non riscoprire.** La
 **migrazione è l'opzione (1)**, «non fare nulla»: i 32 841 punti con id intero
 restano, quindi **la corruzione storica è nel corpus, congelata** — la
@@ -76,8 +97,8 @@ ogni riavvio dell'agent e risale sopra il corpus esistente. Finché A-3 è apert
 4. **Un run lungo si archivia da solo**, con checksum, come ultimo passo.
 
 **Aperto all'ingresso in fase**: #23 (ENV-L, tier misurati e `preflight.ps1` su
-Windows) · #44 da riverificare su due GPU · #47 (warm-up gate) · `RUN_NIGHTLY`
-spenta · T-SOAK-24h in attesa di A-3.
+Windows) · #44 **verificato a runtime il 31/08** (lettura per-device prodotta e consumata dal gate; ramo di contesa non esercitato) · #47 (warm-up gate) · `RUN_NIGHTLY`
+spenta · T-SOAK-24h **in corso** (`20260831-1644-envw-4d5f24a`, fine attesa 01/09 ~16:44Z).
 
 **Prossimo passo**: **#40**, irrobustire T0.10 — è infrastruttura di test, quindi
 anticipabile, e **sblocca A-1**; T0.10 ha dato XPASS anche il 31/08, terzo esito
@@ -163,3 +184,124 @@ della collection.
      impossibile da soddisfare per chiunque la applichi alla lettera.
   2. Confermare che questa sessione può committare codice: `CLAUDE.md` §2 dice di no, il
      briefing di fase dice di sì. Ho seguito il briefing e l'ho dichiarato.
+
+---
+
+## 2026-08-31 — ENV-W (Z8) — sessione operativa T-SOAK-24h
+
+- **Obiettivo della sessione**: lanciare il primo T-SOAK-24h del progetto e
+  metterlo al sicuro, non sorvegliarlo.
+
+- **Fatto**:
+  - **Identificato l'host prima di ogni altra cosa**: `berlin-3eie`, 2× Xeon Gold
+    6244 (32 thread), 235 GiB, RTX 3090 + RTX 5060 Ti → **è la Z8, ENV-W**. Prova
+    indipendente oltre alle specifiche: `~/NORTHSTREAM-archive/` contiene i run del
+    27 e 28/08, quindi è la stessa macchina che ha prodotto il "prima". Tag
+    `--env envw`, e questo run **è** il "dopo" dei due soak da 7,4 h.
+  - Allineata la working copy viva `~/claude/ns-work` a `release/v0.0.4` @
+    `4d5f24a` (**19 commit avanti** a `develop`).
+  - Precondizioni verificate una per una: `bench/soak/run.sh` presente ·
+    `grep -c uuid5 stream-agent/app.py` → **3** · `open-webui` `mem_limit: 1024m`.
+  - Stack riavviato **a freddo**: `down` (senza `-v`: volumi named preservati,
+    corpus Qdrant e slot di replica intatti) + `./start-addon.sh --gpu`. Bring-up
+    chiuso alle **16:22:18Z**, **19 container** in esecuzione, i due job one-shot
+    (`create-minio-bucket`, `execute-migrate-all`) usciti come atteso.
+  - Assestamento **22 minuti** (16:22:18Z → 16:44:27Z), sopra il minimo di 15.
+  - Soak lanciato: **`RUN_ID 20260831-1644-envw-4d5f24a`**, cartella
+    `results/20260831-1644-envw-4d5f24a`, `--interval 60 --duration 86400
+    --env envw --exclusivity shared`, distaccato sotto **PPID 1** (PID 3469766).
+    - follow: `tail -f results/20260831-1644-envw-4d5f24a/soak.out.log`
+    - stop:   `pkill -f "soak/run.sh.*20260831-1644-envw-4d5f24a"`
+    - fine attesa: **2026-09-01 ~16:44Z**, con `SHA256SUMS` scritto dal run stesso.
+
+- **Decisioni prese**:
+  - **Teardown prima del lancio, invece di partire sullo stack caldo.** Lo stack
+    era su da 20 h e Trino stava a **1 470 MiB** contro i **981 MiB** del primo
+    campione del soak #2, che partì da freddo. Lanciare da lì avrebbe misurato la
+    pendenza di un Trino già assestato, non la curva freddo→assestato che ha
+    misurato il "prima": due variabili invece di una, contro §4.3.2. **Alternativa
+    scartata**: il solo `./start-addon.sh --gpu`, che con `--build` avrebbe
+    ricreato il solo `stream-agent` lasciando caldi gli altri diciotto — uno stack
+    di età mista, peggio di entrambi gli estremi perché il difetto non si vede.
+  - **`--exclusivity shared`, non `exclusive`.** Le GPU sono libere (0 processi
+    compute), ma sull'host gira `caliper-flowise` (altro progetto compose, up da
+    20 h). Il campo chiede «era ENV-W nostro solo», non «era libera la GPU».
+    Coerente col precedente del gate 29/08, che dichiarò non esclusivo per un
+    container estraneo effimero.
+  - **`--gpu` mantenuto** benché il soak non sia GPU-sensibile: è la
+    configurazione del "prima". Per la stessa ragione `docker-compose.gpu.yml`
+    resta a `count: all` — fissare la scheda è corretto (blocco aperto del 30/08)
+    ma è una modifica di comportamento, e non va infilata dentro il run che deve
+    fare da termine di paragone.
+
+- **Test eseguiti**:
+  - `python3 bench/lib/gpu_exclusivity.py` → `state: exclusive`,
+    `gpu_max_free_single_device_mib:` **24567**, `gpu_free_mib: 40868`, 0 processi
+    estranei, 2 device. **Prima verifica a runtime di `e5588c9` (#44)**: il campo
+    per-device viene prodotto ed è quello che `preflight.sh` usa per il gate — la
+    somma resta solo come dato riportato, col commento che la chiama «a false
+    green». *Limite dichiarato*: il ramo di contesa **non** è stato esercitato (0
+    processi estranei sulle GPU), quindi è verificata la lettura, non lo scatto
+    del FAIL.
+  - Connettore CDC `northstream-postgres-connector`: `RUNNING`, task `RUNNING`
+    (la config è sopravvissuta al teardown nel topic di Kafka).
+  - Slot di replica: `active = t`, **3 760 B** trattenuti.
+  - Postgres: `orders` **55 663**, `sensor_readings` **55 565** (il soak #2 partì
+    da 14 233 / 14 238: i dati sono persistiti attraverso il teardown).
+  - Qdrant: collection `stream_events`, **37 482** punti — il report A-3 citava
+    32 984 → 32 994, quindi il corpus **cresce invece di essere riscritto**.
+  - Agent `/health` → `ok`, 56 eventi in buffer. Ollama vede entrambe le schede.
+  - Primo campione del soak: **19 container**, RSS totale **7 691,8 MiB** (contro
+    la mediana 7 986 del soak #2 — coerente), `qdrant.points_count` 37 903, slot
+    `active: true`, `table_counts` popolati, `soak.err.log` **vuoto**.
+
+- **Costo della sessione**: non misurabile (sessione Claude CLI locale, il campo
+  `usage` non è esposto — §4 vieta di stimarlo).
+
+- **Non funziona / sospeso**:
+  - **La ricetta di verifica del `mem_limit` produce un falso negativo.**
+    `grep -A3 "northstream-open-webui" docker-compose-northstream-ai.yml | grep
+    mem_limit` non restituisce **nulla**: `northstream-open-webui` è il
+    `container_name`, la chiave di servizio è `open-webui:` (riga 392) e il
+    `mem_limit` sta alla **402**, fuori dalla finestra `-A3`. Il valore vero è
+    `1024m`. Presa alla lettera, la ricetta **ferma una sessione che è sul branch
+    giusto**. Va riscritta ancorandola alla chiave di servizio.
+  - **`verdict.py:62` implementa ancora il check (a) vecchio**:
+    `plateaued = any(points[i] <= points[i-1])` → `OK`. Su ~1 440 campioni basta un
+    solo campione non crescente per tingere di verde l'intero check, e non legge
+    mai il flusso eventi del DB che §4.3.1 ora richiede. **Al ritorno comanda il
+    piano**, e la divergenza va scritta nel report.
+  - **Premessa sfaldata in `docs/piano_ricovero.md` §4.3.1.** La riga «Nessuna
+    retention configurata (stato di oggi, A-3) → **WARN, mai OK**» è motivata con
+    «finché A-3 non è chiuso non esiste una retention». **A-3 è chiuso e la
+    retention continua a non esistere**: l'unico `maxlen` in `stream-agent/app.py`
+    è il buffer in RAM (`recent_events = deque(maxlen=MAX_BUFFER)`), niente sulla
+    collection Qdrant. La *conclusione* regge (niente retention → WARN), la
+    *motivazione* no — il piano lega le due cose come se chiudere A-3 producesse
+    una retention. Da riscrivere prima che qualcuno legga «A-3 chiuso» e ne deduca
+    che (a) può ora dare OK.
+  - **Due working copy sullo stesso host.** `~/claude/ns-work` è quella viva (è la
+    `working_dir` con cui sono composti i container); `~/claude/NORTHSTREAM` è
+    ferma su `release/v0.0.2` con sei file modificati non committati, e ha
+    `trino/catalog` di proprietà **root** (creata da un container il 26/08, è il
+    P-12) che fa fallire le operazioni git. Le modifiche sono in `stash@{0}`
+    etichettato `leftovers-release-v0.0.2-pre-TSOAK24h-20260831`, **non
+    cancellate**. Residuo di una delle quattro archiviazioni della sessione bridge.
+  - **`tmux` ancora non applicato**: il soak è protetto da `--detach` (PPID 1), non
+    da `tmux`. `bench/env-w/start-session.sh` esiste ma questa sessione non l'ha
+    usato, perché opera via SSH dal laptop dell'owner e non come sessione CLI sulla
+    Z8.
+
+- **Prossimo passo per la sessione successiva**: al termine del run (atteso
+  **2026-09-01 ~16:44Z**) verificare **prima l'integrità** di
+  `results/20260831-1644-envw-4d5f24a` — `seq` contigui senza buchi, `soak.err.log`,
+  `sha256sum -c SHA256SUMS` — e dichiarare ciò che manca invece di interpolare; poi
+  emettere il verdetto sui quattro check di §4.3.1, **calcolando (a) a mano** perché
+  `verdict.py` diverge dal piano, e scrivere il report in `docs/runs/`.
+
+- **Decisioni richieste all'owner**: nessuna bloccante per il run in corso.
+  1. `verdict.py` check (a) da riallineare a §4.3.1 (oggi non può fallire).
+  2. La motivazione di §4.3.1 su retention/A-3 da riscrivere (v. sopra).
+  3. `caliper-flowise` resta acceso sull'host: non l'ho toccato perché è di un
+     altro progetto. Se i run futuri devono essere `exclusive`, spegnerlo è una
+     scelta dell'owner.

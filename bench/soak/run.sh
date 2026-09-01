@@ -112,6 +112,43 @@ if [[ "$DETACH" == "yes" && "${NS_SOAK_CHILD:-}" != "1" ]]; then
     exit 0
 fi
 
+# What the host actually looks like at launch, next to what the launcher said.
+#
+# The first T-SOAK-24h declared `shared` because a foreign container had been
+# seen in a `docker ps` taken before the teardown -- and that container had
+# stopped 25 minutes before the run began. The declaration was read from memory
+# instead of measured at the moment it was written down, which is the same
+# failure the three lessons in CLAUDE.md §5 describe: a declared field standing
+# in for a measured one. Diligence had already been applied and still missed it,
+# so the check belongs here.
+#
+# Detection stays advisory. The field is a declaration by contract -- somebody
+# has to say whether the machine was theirs -- and a container is only one kind
+# of company. So this records what it saw, warns when the two disagree, and
+# never silently overwrites what the launcher declared.
+NS_PROJECT="${NS_PROJECT:-$(basename "$REPO" | tr '[:upper:]' '[:lower:]')}"
+detected_exclusivity="unknown"
+foreign_containers=""
+if command -v docker >/dev/null 2>&1; then
+    all_ids="$(docker ps -q --no-trunc 2>/dev/null)"
+    ours="$(docker ps -q --no-trunc --filter "label=com.docker.compose.project=${NS_PROJECT}" 2>/dev/null)"
+    if [[ -n "$all_ids" ]]; then
+        foreign_ids="$(comm -23 <(printf '%s\n' "$all_ids" | sort) <(printf '%s\n' "$ours" | sort))"
+        if [[ -z "${foreign_ids// /}" ]]; then
+            detected_exclusivity="exclusive"
+        else
+            detected_exclusivity="shared"
+            foreign_containers="$(docker inspect --format '{{.Name}}' $foreign_ids 2>/dev/null | tr -d '/' | tr '\n' ' ')"
+        fi
+    fi
+fi
+
+if [[ "$detected_exclusivity" != "unknown" && "$EXCLUSIVITY" != "$detected_exclusivity" ]]; then
+    echo "WARNING: --exclusivity says '${EXCLUSIVITY}' but the host reads '${detected_exclusivity}' right now." >&2
+    [[ -n "$foreign_containers" ]] && echo "         foreign containers: ${foreign_containers}" >&2
+    echo "         The declaration is kept as given. Re-check it before the archive is closed." >&2
+fi
+
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 started_epoch="$(date +%s)"
 
@@ -138,10 +175,15 @@ json.dump({
     "git_sha": sys.argv[4], "interval_seconds": int(sys.argv[5]),
     "duration_seconds": int(sys.argv[6]) or None, "started_at": sys.argv[7],
     "samples_file": "samples.jsonl", "exclusivity": sys.argv[10],
+    "exclusivity_detected": sys.argv[11] or None,
+    "exclusivity_agrees": (None if sys.argv[11] in ("", "unknown")
+                           else sys.argv[11] == sys.argv[10]),
+    "foreign_containers_at_launch": [c for c in sys.argv[12].split() if c] or None,
     "initial_conditions": init,
 }, open(sys.argv[8], "w"), indent=2)
 ' "$RUN_ID" "$ENV_TAG" "$REPO" "$GIT_SHA" "$INTERVAL" "$DURATION" "$started_at" \
-  "$REPORT_DIR/manifest.json" "$INIT_FILE" "$EXCLUSIVITY"
+  "$REPORT_DIR/manifest.json" "$INIT_FILE" "$EXCLUSIVITY" \
+  "$detected_exclusivity" "$foreign_containers"
 rm -f "$INIT_FILE"
 
 echo "RUN_ID:   $RUN_ID"

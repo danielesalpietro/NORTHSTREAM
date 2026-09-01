@@ -46,6 +46,18 @@ numeri misurati: rimandati a [#23](https://github.com/danielesalpietro/NORTHSTRE
 che richiede ENV-L per le righe VRAM a 16 GB.*
 
 ### Added
+- `bench/soak/run.sh` misura l'esclusività **al momento del lancio** e la scrive
+  accanto a quella dichiarata: `exclusivity_detected`, `exclusivity_agrees` e
+  `foreign_containers_at_launch` nel manifest, più un avviso su `stderr` quando
+  le due divergono. Il primo T-SOAK-24h ha dichiarato `shared` sulla base di un
+  `docker ps` preso **prima** del teardown, mentre il container estraneo si era
+  fermato **25 minuti prima del lancio**: il valore vero era `exclusive`. È la
+  famiglia di difetti di `CLAUDE.md` §5 — un campo dichiarato al posto di uno
+  misurato — e la diligenza era già stata applicata, quindi il controllo va
+  nell'harness. **Resta consultivo**: la dichiarazione è un contratto (qualcuno
+  deve dire se la macchina era sua) e un container è solo un tipo di compagnia,
+  quindi il campo dichiarato non viene mai sovrascritto in silenzio.
+
 - `bench/soak/` portato su `release/v0.0.4` dal branch `feature/soak-harness`, che
   era **62 commit indietro**: lanciare T-SOAK-24h da lì avrebbe misurato uno stack
   senza il fix di A-3, coi tetti vecchi e senza il catalogo Trino — il sistema

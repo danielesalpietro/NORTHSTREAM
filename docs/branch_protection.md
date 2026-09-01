@@ -178,7 +178,7 @@ se è stato **bypassato** e da chi. Se il force-push della prova 2 non compare
 affatto, siamo nel caso 1 o 2; se compare come *bypassed*, nel caso 3.
 
 **Residuo da ripulire a mano**: il branch `release/v9.9.9-ruleset-test`
-(commit vuoto `b671e05`) è rimasto su origin, perché la sessione che l'ha creato
+(commit vuoto `c60ef21` dopo il secondo giro) è rimasto su origin, perché la sessione che l'ha creato
 non può cancellare ref. Si toglie da
 https://github.com/danielesalpietro/NORTHSTREAM/branches o con
 `git push origin --delete release/v9.9.9-ruleset-test` da una macchina
@@ -188,6 +188,45 @@ esattamente quella progettata.
 
 **Finché la prova 2 non diventa un rifiuto, i tre ruleset vanno considerati
 non verificati**, indipendentemente da come appaiono in elenco.
+
+### Secondo giro — 2026-09-01, dopo il re-import dell'owner
+
+Ripetuta la sola prova 2 sul branch di test già esistente, dopo che l'owner ha
+reimportato le regole e mergiato #50:
+
+```
++ b671e05...c60ef21 ruleset-probe -> release/v9.9.9-ruleset-test (forced update)
+PUSH_EXIT=0
+```
+
+**Accettato di nuovo.** Due esecuzioni su due, a distanza di un re-import: non è
+un caso isolato né una propagazione lenta. Cade la causa 2 dell'elenco sopra
+(un pattern sbagliato sarebbe stato corretto dal re-import solo per caso, ma
+soprattutto restano in piedi due ipotesi che si distinguono con un solo dato):
+
+- **(A) il ruleset non è attivo** — `Enforcement status: Disabled`, oppure quel
+  terzo file non è mai stato creato;
+- **(B) è attivo ma questa sessione lo bypassa** — il push arriva da una
+  GitHub App, e se la bypass list contiene *Repository admin* o l'app stessa,
+  la regola c'è e non si applica proprio all'attore automatico da cui doveva
+  proteggere.
+
+**Il dato che le separa** è lo stesso comando eseguito dalla macchina
+dell'owner, con le sue credenziali:
+
+```powershell
+git fetch origin release/v9.9.9-ruleset-test
+git checkout -B probe FETCH_HEAD
+git commit --allow-empty -m "probe [skip ci]"
+git push --force origin probe:refs/heads/release/v9.9.9-ruleset-test
+```
+
+- rifiutato con `GH013` → **(B)**: la regola funziona, ma la bypass list va
+  svuotata, altrimenti protegge da tutti tranne che dalle sessioni automatiche;
+- accettato → **(A)**: la regola non è in vigore per nessuno.
+
+In entrambi i casi *Settings → Rules → Rule Insights* mostra il push e dice se è
+stato *bypassed* e da chi: è la lettura da fare per prima.
 
 ## 8. Nota per il logbook
 

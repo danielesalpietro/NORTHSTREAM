@@ -21,15 +21,43 @@ attraverso un riavvio: **0 punti preesistenti cambiati, 0 spariti**, +10 nuovi
 tutti con id UUID. Report:
 [`20260831-1209-envw-db4c22a-a3.md`](../runs/20260831-1209-envw-db4c22a-a3.md).
 
-**T-SOAK-24h è in corso** — il primo del progetto, lanciato il 31/08 alle
-16:44:38Z su ENV-W: **`RUN_ID 20260831-1644-envw-4d5f24a`**, intervallo 60 s,
-durata 86 400 s, `--exclusivity shared` — **dichiarazione sbagliata, in senso conservativo**: `caliper-flowise` si era fermato alle 16:19:47Z, 25 min prima del lancio, e l'host è stato libero da estranei per tutto il run (addendum in fondo al file) —, distaccato sotto **PPID 1**, con
-`SHA256SUMS` che il run scrive da sé a fine corsa. Fine attesa **01/09 ~16:44Z**.
-Lo stack è stato riavviato **a freddo** (19 container, 22 min di assestamento
-dichiarati) proprio per restare confrontabile col "prima": Trino partiva da
-**981 MiB** nel soak #2 e stava a **1 470 MiB** sullo stack caldo da 20 h — partire
-di lì avrebbe variato due cose invece di una. Primo campione: RSS totale
-**7 691,8 MiB**, Qdrant **37 903** punti, slot attivo, `soak.err.log` vuoto.
+**T-SOAK-24h è concluso ma senza verdetto** — il primo del progetto, lanciato il
+31/08 alle 16:44:38Z su ENV-W (**`RUN_ID 20260831-1644-envw-4d5f24a`**, intervallo
+60 s, 86 400 s, `--exclusivity shared` — **dichiarazione sbagliata in senso
+conservativo**: `caliper-flowise` si era fermato alle 16:19:47Z, 25 min prima del
+lancio, e l'host è stato libero da estranei per tutto il run) e **terminato l'01/09
+alle 16:44Z**. Lo stack era stato riavviato **a freddo** (19 container, 22 min di
+assestamento dichiarati) per restare confrontabile col "prima". **I grezzi sono
+completi e integri** in `~/NORTHSTREAM-archive/20260831-1644-envw-4d5f24a/`, con
+`SHA256SUMS` scritto dal run stesso: **manca solo l'analisi**, non il dato.
+
+Il **check di metà run** ([`fecccc9`](https://github.com/danielesalpietro/NORTHSTREAM/commit/fecccc9),
+991 campioni su 17h26m) ha stabilito due cose. **Il flusso è vivo e senza perdite**:
+Postgres +19 226 righe, Qdrant +19 227 punti, e il divario db−qdrant resta a
+**73 752 ±2 su ogni campione** — un offset storico, non una perdita che si accumula.
+Non è il caso FAIL di §4.3.1(a). **Ma Ollama gira su CPU**: `ollama ps` dà
+`PROCESSOR 100% CPU` con keep_alive ancora valido, malgrado avvio a freddo con
+`--gpu` e container che vede entrambe le schede. È l'anomalia del 30/08 ancora
+presente. Conseguenza: prima 420 campioni su 420 sopra i 100 MiB con mediana 362,
+ora 22 su 991 con mediana 19 — **i numeri di VRAM di questo run non possono
+dimensionare una scheda**, perché è una seconda variabile cambiata fra prima e dopo
+e §4.3.2 lo vieta a un confronto.
+
+Restano due precondizioni al verdetto, entrambe scritte dalla sessione stessa: la
+**correlazione offset Kafka ↔ id `uuid5`** sui 250 fallimenti di embedding/upsert
+delle finestre 08:31–08:37 e 08:49–08:55 (tutti col bare `"timed out"`, firma del
+client Qdrant, mentre db e qdrant guadagnavano entrambi 2 058 con ammanco zero) —
+decide se (c) può dire «nessun evento perso» o solo «nessuna riga di tabella
+mancante» — e l'**esclusione dei campioni falliti**: quelli con `containers._error`
+sommati danno RSS totale **0**, cioè una misura mancante che si legge come consumo
+bassissimo (12 su 420 in soak #2, da verificare su questo run). Stessa famiglia
+della lezione §5 sui campi derivati.
+
+**PROGETTO CONGELATO dal 03/09** su richiesta dell'owner: la Z8 ha una nuova
+priorità. Stack fermato con `stop` (mai `down -v`: distruggerebbe gli 8 volumi
+nominati, corpus Qdrant e modelli Granite inclusi). Tutti e 19 i servizi hanno
+`restart: unless-stopped`, quindi lo stop regge al riavvio della macchina.
+`ci-nightly` non scongela nulla: è gated su `RUN_NIGHTLY` che è spento (#47).
 
 **Al ritorno, due trappole già identificate.** (1) **Integrità prima del
 verdetto**: `seq` contigui, `soak.err.log`, `sha256sum -c SHA256SUMS` — e dire ciò
@@ -447,3 +475,65 @@ consumo bassissimo invece che come misura assente.** È la stessa famiglia della
 di §5 sul campo derivato che deve distinguere «falso» da «non l'ho potuto sapere», e
 la stessa forma del corollario di §4.3.1 («un tetto troppo stretto si legge come poco
 consumo»). I campioni `_error` vanno **esclusi**, non sommati.
+
+---
+
+## 2026-09-03 — supervisione (cloud) — congelamento di fase
+
+- **Obiettivo della sessione**: chiudere il verdetto di T-SOAK-24h; a fronte del
+  blocco, mettere in sicurezza lo stato e congelare la fase.
+
+- **Fatto**:
+  - `66afcd0` — `bench/lib/mem_limit.sh`: lettura del tetto di memoria ancorata
+    alla **chiave di servizio**, non al `container_name`. Chiude il finding di
+    "Non funziona / sospeso" del 01/09. Tre esiti tenuti distinti (valore /
+    `none` / exit 2 su servizio inesistente), falsificato in entrambe le
+    direzioni prima di essere creduto.
+  - Aggiornata §2 di `CLAUDE.md` e questa testa allo stato reale post-soak.
+  - Procedura di congelamento consegnata all'owner per esecuzione su ENV-W.
+
+- **Decisioni prese**:
+  - **Congelare con `stop`, non con `down`.** `down -v` distruggerebbe gli 8
+    volumi nominati — corpus Qdrant, DB Postgres, e i modelli Granite in
+    `ollama_data`, decine di GB da riscaricare. `down` semplice rimuoverebbe i
+    container senza guadagno. Scartate entrambe.
+  - **Fermare tutto insieme, mai a pezzi.** Se Postgres resta acceso mentre
+    Debezium è fermo, lo slot di replica logica non viene più consumato e il WAL
+    cresce senza limite finché il disco si riempie.
+  - **La sessione ENV-W va ricreata sulla Z8, non sbloccata dov'è** (decisione
+    owner 01/09): l'hop SSH l'ha bloccata tre volte, e `bench/env-w/start-session.sh`
+    dentro `tmux` lo elimina.
+
+- **Test eseguiti**: nessun test di suite (progetto in congelamento).
+  Verifiche meccaniche: `restart:` di tutti i 19 servizi (tutti
+  `unless-stopped`, nessuno `always`), 8 volumi nominati censiti, gate
+  `RUN_NIGHTLY` di `ci-nightly` confermato spento. Falsificazione di
+  `mem_limit.sh` su 5 casi.
+
+- **Costo della sessione**: non misurabile in questa sede (sessione di
+  supervisione, non operativa).
+
+- **Non funziona / sospeso**:
+  - **Il verdetto di T-SOAK-24h non è stato prodotto.** La sessione ENV-W è
+    BLOCCATA dall'01/09 17:46Z su un prompt di permesso per il comando SSH di
+    correlazione, e dal 02/09 12:54Z la macchina è `computer_unreachable`.
+  - **Lezione sul briefing**: avevo reso quella correlazione una *precondizione
+    dura* al verdetto, instradando la sessione dentro l'unica operazione nota per
+    bloccarla. La via d'uscita che le avevo lasciato copriva il caso "dati
+    insufficienti", non il caso "ferma su un'approvazione". **Una precondizione
+    che passa per l'operazione nota per bloccare è una precondizione che stalla**:
+    va scritta al contrario — consegna il verdetto nella forma debole, e la
+    correlazione come lavoro aperto.
+
+- **Prossimo passo per la sessione successiva**: dai grezzi già integri in
+  `~/NORTHSTREAM-archive/20260831-1644-envw-4d5f24a/`, produrre il verdetto dei
+  quattro check di §4.3.1 con **(a) calcolata a mano** e **(c) nella forma debole**
+  se la correlazione resta non disponibile, escludendo i campioni con
+  `containers._error` invece di sommarli.
+
+- **Decisioni richieste all'owner**:
+  - Se la Z8 verrà reinstallata o noleggiata, **copiare altrove l'archivio del
+    soak prima**: sono 24 ore di misura mai lette e non riproducibili.
+  - [#49](https://github.com/danielesalpietro/NORTHSTREAM/issues/49): resta aperta
+    la verifica se la PSU del nodo MicroCloud abbia un cavo PCIe ausiliario libero
+    per la Quadro RTX 4000. Unico blocco hardware del piano ENV-D/ENV-C.
